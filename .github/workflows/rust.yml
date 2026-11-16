@@ -43,7 +43,10 @@ jobs:
 
   macos:
     name: macOS universale
-    runs-on: macos-14
+    # macos-14 e' stato ritirato il 2 novembre 2026: l'allocazione del runner
+    # fallisce con "configuration 'macos-14-arm64-us-default' is not supported".
+    # macos-15 e' arm64 (Apple Silicon) e resta disponibile.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
