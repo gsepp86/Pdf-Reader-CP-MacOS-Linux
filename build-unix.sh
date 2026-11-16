@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# Compila PDF Reader CP per macOS e Linux e prepara i pacchetti in dist/.
+#
+#   ./build-unix.sh              compila per il sistema corrente
+#   ./build-unix.sh --universal  solo macOS: binario universale (arm64 + x86_64)
+#
+# La libreria PDFium viene scaricata da bblanchon/pdfium-binaries e messa accanto
+# all'eseguibile, perche' il programma la cerca nella propria cartella.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+UNIVERSAL=0
+for a in "$@"; do
+  case "$a" in
+    --universal) UNIVERSAL=1 ;;
+    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "Opzione sconosciuta: $a" >&2; exit 1 ;;
+  esac
+done
+
+VERSION="$(sed -n 's/^version *= *"\(.*\)".*/\1/p' Cargo.toml | head -1)"
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+LIB=""; ASSET=""; TAG=""; DEB_ARCH=""
+
+case "$OS" in
+  Linux)
+    LIB=libpdfium.so
+    case "$ARCH" in
+      x86_64|amd64) ASSET=pdfium-linux-x64;   TAG=linux-x64;   DEB_ARCH=amd64 ;;
+      aarch64|arm64) ASSET=pdfium-linux-arm64; TAG=linux-arm64; DEB_ARCH=arm64 ;;
+      *) echo "Architettura non supportata: $ARCH" >&2; exit 1 ;;
+    esac ;;
+  Darwin)
+    LIB=libpdfium.dylib
+    if [ "$UNIVERSAL" = 1 ]; then
+      ASSET=pdfium-mac-univ; TAG=macos-universal
+    else
+      case "$ARCH" in
+        arm64)  ASSET=pdfium-mac-arm64; TAG=macos-arm64 ;;
+        x86_64) ASSET=pdfium-mac-x64;   TAG=macos-x64 ;;
+        *) echo "Architettura non supportata: $ARCH" >&2; exit 1 ;;
+      esac
+    fi ;;
+  *) echo "Sistema non supportato: $OS (su Windows usa build.bat)" >&2; exit 1 ;;
+esac
+
+echo "== PDF Reader CP $VERSION - $OS $TAG =="
+mkdir -p dist vendor
+
+# 1. PDFium accanto all'eseguibile
+if [ ! -f "vendor/$LIB" ]; then
+  echo "Scarico $ASSET..."
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  curl -L --fail --silent --show-error -o "$TMP/pdfium.tgz" \
+    "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/$ASSET.tgz"
+  tar -xzf "$TMP/pdfium.tgz" -C "$TMP"
+  cp "$TMP/lib/$LIB" "vendor/$LIB"
+  rm -rf "$TMP"
+  trap - EXIT
+fi
+
+# 2. compilazione
+if [ "$UNIVERSAL" = 1 ]; then
+  rustup target add aarch64-apple-darwin x86_64-apple-darwin
+  cargo build --release --target aarch64-apple-darwin
+  cargo build --release --target x86_64-apple-darwin
+  BIN=target/PDFReaderCP-universale
+  lipo -create -output "$BIN" \
+    target/aarch64-apple-darwin/release/PDFReaderCP \
+    target/x86_64-apple-darwin/release/PDFReaderCP
+else
+  cargo build --release
+  BIN=target/release/PDFReaderCP
+fi
+
+# 3. pacchetto
+if [ "$OS" = Linux ]; then
+  PKG="dist/PDFReaderCP-$VERSION-$TAG"
+  rm -rf "$PKG"
+  mkdir -p "$PKG"
+  cp "$BIN" "$PKG/PDFReaderCP"
+  cp "vendor/$LIB" "$PKG/"
+  chmod +x "$PKG/PDFReaderCP"
+  cat > "$PKG/LEGGIMI.txt" <<EOF
+PDF Reader CP $VERSION ($TAG)
+
+Avvio:  ./PDFReaderCP [file.pdf]
+
+La libreria $LIB deve restare nella stessa cartella dell'eseguibile.
+La stampa usa CUPS (pacchetto cups-client). Le opzioni della stampante
+(fronte/retro, vassoio, qualita') si impostano nella coda CUPS, per esempio:
+    lpoptions -d NOME_STAMPANTE -l
+EOF
+  tar -C dist -czf "$PKG.tar.gz" "$(basename "$PKG")"
+  echo "Creato $PKG.tar.gz"
+
+  if command -v dpkg-deb >/dev/null 2>&1; then
+    ROOT=dist/deb-root
+    rm -rf "$ROOT"
+    mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/lib/pdfreadercp" "$ROOT/usr/bin" \
+      "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" \
+      "$ROOT/usr/share/doc/pdf-reader-cp"
+    cp "$BIN" "$ROOT/usr/lib/pdfreadercp/PDFReaderCP"
+    cp "vendor/$LIB" "$ROOT/usr/lib/pdfreadercp/"
+    chmod +x "$ROOT/usr/lib/pdfreadercp/PDFReaderCP"
+    printf '#!/bin/sh\nexec /usr/lib/pdfreadercp/PDFReaderCP "$@"\n' > "$ROOT/usr/bin/pdfreadercp"
+    chmod +x "$ROOT/usr/bin/pdfreadercp"
+    cp unix/pdfreader-cp.desktop "$ROOT/usr/share/applications/"
+    cp assets/icon.png "$ROOT/usr/share/icons/hicolor/256x256/apps/pdf-reader-cp.png"
+    cp README-UNIX.md "$ROOT/usr/share/doc/pdf-reader-cp/README.md"
+    cat > "$ROOT/DEBIAN/control" <<EOF
+Package: pdf-reader-cp
+Version: $VERSION
+Section: office
+Priority: optional
+Architecture: $DEB_ARCH
+Maintainer: Peppe CP <https://github.com/gsepp86/Pdf-Reader-CP>
+Depends: libc6, libstdc++6, cups-client | cups, libgl1, libxkbcommon0, libx11-6, libxcursor1, libxrandr2, libxi6, fonts-dejavu-core | fonts-liberation
+Description: Lettore PDF a schede con stampa rapida
+ Lettore PDF con schede, stampa immediata di tutte le schede aperte e
+ anteprima di stampa. La stampa passa da CUPS.
+EOF
+    DEB="dist/PDFReaderCP_${VERSION}_${DEB_ARCH}.deb"
+    if ! dpkg-deb --root-owner-group --build "$ROOT" "$DEB" >/dev/null 2>&1; then
+      dpkg-deb --build "$ROOT" "$DEB" >/dev/null
+    fi
+    rm -rf "$ROOT"
+    echo "Creato $DEB"
+  fi
+fi
+
+if [ "$OS" = Darwin ]; then
+  APP=dist/PDFReaderCP.app
+  rm -rf "$APP"
+  mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+  cp "$BIN" "$APP/Contents/MacOS/PDFReaderCP"
+  cp "vendor/$LIB" "$APP/Contents/MacOS/"
+  chmod +x "$APP/Contents/MacOS/PDFReaderCP"
+  sed "s/@VERSION@/$VERSION/g" unix/Info.plist > "$APP/Contents/Info.plist"
+
+  if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
+    ICONSET=dist/icon.iconset
+    rm -rf "$ICONSET"
+    mkdir -p "$ICONSET"
+    for s in 16 32 128 256 512; do
+      sips -z "$s" "$s" assets/icon.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null 2>&1
+      d=$((s * 2))
+      sips -z "$d" "$d" assets/icon.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null 2>&1
+    done
+    iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/icon.icns"
+    rm -rf "$ICONSET"
+  fi
+
+  # firma ad-hoc: senza certificato Apple il primo avvio va sbloccato (vedi README-UNIX.md)
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+
+  ZIP="dist/PDFReaderCP-$VERSION-$TAG.zip"
+  rm -f "$ZIP"
+  ditto -c -k --keepParent "$APP" "$ZIP"
+  echo "Creato $ZIP"
+fi
+
+echo
+echo "Pacchetti pronti in dist/:"
+ls -1 dist | sed 's/^/  /'

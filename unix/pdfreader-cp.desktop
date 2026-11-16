@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=PDF Reader CP
+GenericName=Lettore PDF
+Comment=Lettore PDF a schede con stampa rapida
+Exec=pdfreadercp %f
+Icon=pdf-reader-cp
+Terminal=false
+StartupWMClass=pdf-reader-cp
+Categories=Office;Viewer;
+MimeType=application/pdf;
+Keywords=pdf;stampa;print;
