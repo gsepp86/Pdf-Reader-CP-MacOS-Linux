@@ -3,6 +3,9 @@ name: Release macOS e Linux
 on:
   workflow_dispatch:
   push:
+    # un push su main fa partire la build (artifact); la release viene creata
+    # solo quando il push e' un tag v*.
+    branches: [main]
     tags: ["v*"]
 
 permissions:
