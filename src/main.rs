@@ -567,6 +567,9 @@ struct TCh { c: char, r: [f32; 4] }
 /// Selezione di testo: documento, pagina, indice del primo e dell'ultimo carattere.
 struct Sel { doc: usize, page: usize, a: usize, b: usize }
 
+/// Richiesta della password di un PDF protetto: la finestra compare solo quando il file non si apre senza.
+struct PwdAsk { path: PathBuf, text: String, wrong: bool, focus: bool, queue: Vec<PathBuf> }
+
 /// Lavoro di stampa in corso: procede un passo (un foglio) per volta cosi' l'interfaccia resta viva e mostra il cerchio di caricamento.
 struct PrintTask {
     ids: Vec<u64>, st: Settings, di: usize, job: Option<spool::Job>,
@@ -581,6 +584,7 @@ struct App {
     msg: String, msg_at: Option<Instant>, logo: egui::TextureHandle, fs: bool, show_info: bool, scroll_tab: bool,
     ipc: Option<std::sync::mpsc::Receiver<Ipc>>, started: bool, sel: Option<Sel>, paper: (f32, f32), paper_key: (String, String),
     upd: Option<std::sync::mpsc::Receiver<(String, String)>>, upd_msg: String, upd_url: String,
+    pwd: Option<PwdAsk>,
     pv_raw: Option<(RawKey, usize, usize, Vec<u8>)>, pv_gen: u64, last_size: (i32, i32), last_change: Instant,
     pan: bool, search: String, search_hit: Option<(usize, usize)>, search_focus: bool, jump: bool,
     show_cfg: bool, cfg: Settings, cfg_tab: usize,
@@ -614,7 +618,7 @@ impl App {
         detect_byte_order(pdfium);
         let start_pan = st.start_pan;
         let ipc = listener.map(|l| { let (tx, rx) = std::sync::mpsc::channel(); serve(l, tx, cc.egui_ctx.clone()); rx });
-        let mut app = App { pdfium, docs: vec![], tab: Tab::Home, draft: st.clone(), st, printers, show_print: false, prev: 0, pv: None, msg: String::new(), msg_at: None, logo, fs: false, show_info: false, scroll_tab: false, ipc, started: false, sel: None, paper: A4, paper_key: (String::new(), String::new()), pv_raw: None, pv_gen: 0, last_size: (0, 0), last_change: Instant::now(), pan: start_pan, search: String::new(), search_hit: None, search_focus: false, jump: false, show_cfg: false, cfg: Settings::default(), cfg_tab: 0, show_pall: false, pa_mode: false, over_acc: 0.0, over_at: Instant::now(), edge: (true, false), scroll_reset: None, tabs_overflow: false, task: None, tab_drag: None, next_id: 1, upd: None, upd_msg: String::new(), upd_url: String::new() };
+        let mut app = App { pdfium, docs: vec![], tab: Tab::Home, draft: st.clone(), st, printers, show_print: false, prev: 0, pv: None, msg: String::new(), msg_at: None, logo, fs: false, show_info: false, scroll_tab: false, ipc, started: false, sel: None, paper: A4, paper_key: (String::new(), String::new()), pv_raw: None, pv_gen: 0, last_size: (0, 0), last_change: Instant::now(), pan: start_pan, search: String::new(), search_hit: None, search_focus: false, jump: false, show_cfg: false, cfg: Settings::default(), cfg_tab: 0, show_pall: false, pa_mode: false, over_acc: 0.0, over_at: Instant::now(), edge: (true, false), scroll_reset: None, tabs_overflow: false, task: None, tab_drag: None, next_id: 1, upd: None, upd_msg: String::new(), upd_url: String::new(), pwd: None };
         for a in init { app.open(a); }
         app
     }
@@ -695,17 +699,79 @@ impl App {
     fn open(&mut self, path: PathBuf) {
         // gia' aperto: passa a quella scheda invece di duplicarla
         if let Some(i) = self.docs.iter().position(|d| d.path == path) { self.tab = Tab::Doc(i); self.scroll_tab = true; return; }
-        let pdf = self.pdfium.load_pdf_from_file(&path, None).ok();
-        let sizes: Option<Vec<(f32, f32)>> = pdf.as_ref().map(|d| d.pages().iter().map(|p| (p.width().value, p.height().value)).collect());
-        match (pdf, sizes) {
-            (Some(pdf), Some(s)) if !s.is_empty() => {
-                let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                let id = self.next_id; self.next_id += 1;
-                self.docs.push(Doc { id, pdf, path, name, sizes: s, cur: 0, zoom: 1.0, fitpage: self.st.fit_page, tex: HashMap::new(), text: HashMap::new(), ptext: HashMap::new() });
-                self.tab = Tab::Doc(self.docs.len() - 1);
-                self.scroll_tab = true;
+        // se e' in corso una richiesta di password, i file aperti nel frattempo si accodano
+        if let Some(p) = self.pwd.as_mut() { p.queue.push(path); return; }
+        self.open_with(path, None, Vec::new());
+    }
+
+    /// Apre un PDF; se e' protetto da password la chiede nella finestra di dialogo, altrimenti mostra l'errore.
+    /// `queue` sono i file aperti mentre era in corso la richiesta di password.
+    fn open_with(&mut self, path: PathBuf, password: Option<&'static str>, mut queue: Vec<PathBuf>) {
+        match self.pdfium.load_pdf_from_file(&path, password) {
+            Ok(pdf) => {
+                let sizes: Vec<(f32, f32)> = pdf.pages().iter().map(|p| (p.width().value, p.height().value)).collect();
+                if sizes.is_empty() {
+                    err(&format!("Impossibile aprire il file:\n{}", path.display()));
+                } else {
+                    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                    let id = self.next_id; self.next_id += 1;
+                    self.docs.push(Doc { id, pdf, path, name, sizes, cur: 0, zoom: 1.0, fitpage: self.st.fit_page, tex: HashMap::new(), text: HashMap::new(), ptext: HashMap::new() });
+                    self.tab = Tab::Doc(self.docs.len() - 1);
+                    self.scroll_tab = true;
+                }
             }
-            _ => err(&format!("Impossibile aprire il file:\n{}", path.display())),
+            Err(PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError)) => {
+                // protetto: solo in questo caso si chiede la password, senza bloccare il resto
+                self.pwd = Some(PwdAsk { path, text: String::new(), wrong: password.is_some(), focus: true, queue });
+                return;
+            }
+            Err(_) => err(&format!("Impossibile aprire il file:\n{}", path.display())),
+        }
+        if !queue.is_empty() { // il file successivo aperto mentre si aspettava la password
+            let next = queue.remove(0);
+            self.open_with(next, None, queue);
+        }
+    }
+
+    /// Finestra della password di un PDF protetto: si apre solo quando il file non si apre senza.
+    fn pwd_window(&mut self, ctx: &egui::Context) {
+        let Some(mut p) = self.pwd.take() else { return };
+        let (mut open, mut go, mut cancel) = (true, false, ctx.input(|i| i.key_pressed(egui::Key::Escape)));
+        let name = p.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let pos = ctx.screen_rect().center() - Vec2::new(200.0, 120.0);
+        egui::Window::new("PDF protetto da password").open(&mut open).collapsible(false).resizable(false).movable(true)
+            .default_pos(egui::pos2(pos.x.max(8.0), pos.y.max(8.0))).show(ctx, |ui| {
+                ui.set_min_width(400.0);
+                ui.label(RichText::new(format!("Il file «{name}» e' protetto da password.")).strong().size(16.0));
+                ui.label("Inserisci la password per aprirlo.");
+                ui.add_space(4.0);
+                let r = ui.add(egui::TextEdit::singleline(&mut p.text).password(true).hint_text("Password").desired_width(360.0));
+                if p.focus { r.request_focus(); p.focus = false; }
+                if ui.input(|i| i.key_pressed(egui::Key::Enter)) { go = true; }
+                if p.wrong { ui.label(RichText::new("Password errata, riprova.").strong().color(ACCENT)); }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.add(Button::new(RichText::new("Apri").strong().color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(110.0, 36.0))).clicked() { go = true; }
+                    if ui.add(Button::new("Annulla").min_size(Vec2::new(100.0, 36.0))).clicked() { cancel = true; }
+                });
+            });
+        if go && !p.text.is_empty() {
+            // PdfDocument prende in prestito la password per tutta la sua vita: la stringa resta
+            // in memoria (pochi byte) per potere tenere il documento aperto in una scheda
+            let path = p.path.clone();
+            let pw: &'static str = Box::leak(p.text.clone().into_boxed_str());
+            self.pwd = None;
+            self.open_with(path.clone(), Some(pw), p.queue);
+            // password errata: la finestra resta aperta con il testo digitato, per correggerlo
+            if let Some(a) = self.pwd.as_mut() { if a.path == path { a.text = pw.to_string(); a.focus = true; } }
+        } else if go {
+            p.wrong = true;
+            self.pwd = Some(p);
+        } else if cancel || !open {
+            self.pwd = None;
+            if !p.queue.is_empty() { let mut q = p.queue; let next = q.remove(0); self.open_with(next, None, q); }
+        } else {
+            self.pwd = Some(p);
         }
     }
 
@@ -1748,6 +1814,7 @@ impl eframe::App for App {
         if self.show_cfg { self.settings_window(ctx); }
         if !self.show_print { self.pa_mode = false; }
         if self.show_print { if let Tab::Doc(i) = self.tab { self.print_dialog(ctx, i); } else { self.show_print = false; } }
+        if self.pwd.is_some() { self.pwd_window(ctx); }
         if self.show_info {
             let mut open = true;
             egui::Window::new("Informazioni").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {

@@ -19,6 +19,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 - **STAMPA TUTTO**: tutte le schede aperte, ognuna per intero, in sequenza, con un solo messaggio di conferma.
 - Molti PDF: Ctrl+Tab / Ctrl+Maiusc+Tab cambiano scheda, Ctrl+W la chiude, clic con la rotellina sulla scheda la chiude, rotellina del mouse sulla barra scorre le schede.
 - F11 schermo intero · frecce / PagSu / PagGiu cambiano pagina · Ctrl+rotellina zoom · trascina i PDF nella finestra.
+- **PDF protetti da password**: si aprono come gli altri; la finestra di dialogo della password compare **solo** quando il file e' davvero protetto, senza bloccare il programma. Se la password e' errata lo dice e si puo' correggere (Invio conferma, Esc annulla). I file aperti mentre la richiesta e' in corso vengono accodati.
 - **Istanza unica**: se il programma e' gia' aperto, un altro PDF (doppio clic, "Apri con", riga di comando) si apre in una nuova scheda della stessa finestra, che torna in primo piano. Usa la porta locale 127.0.0.1:47653.
 - La finestra si apre sempre ingrandita. Ogni scheda ha la sua "x" di chiusura integrata (clic con la rotellina = chiudi).
 - Stampa...: scala **Adatta alla pagina**, **Dimensioni reali (100%)** oppure **Proporzione personalizzata** (25-200 %); con piu' pagine per foglio la scala e' automatica.

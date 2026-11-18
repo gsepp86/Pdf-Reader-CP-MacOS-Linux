@@ -116,6 +116,8 @@ sostituisci la firma ad-hoc in `build-unix.sh` e aggiungi i segreti al workflow.
 ## Note
 
 - Istanza unica sulla porta locale `127.0.0.1:47653`, come su Windows.
+- I PDF protetti da password chiedono la password in una finestra di dialogo solo quando il
+  file e' davvero protetto (stesso comportamento di Windows).
 - Cmd/Ctrl sono gestiti da egui (`Modifiers::COMMAND`): su macOS valgono Cmd+O, Cmd+P, ecc.
 - La finestra e' senza cornice di sistema: su macOS/Linux bordi e angoli sono trascinabili
   per ridimensionarla; su Windows il comportamento resta quello originale.
