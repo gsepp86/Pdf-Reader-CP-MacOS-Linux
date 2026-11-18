@@ -1,4 +1,4 @@
-// PDF Reader CP 2.2 - Programma opensource progettato da Peppe CP con l'aiuto della IA.
+// PDF Reader CP 2.6 - Programma opensource progettato da Peppe CP con l'aiuto della IA.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use eframe::egui::{self, Button, Color32, RichText, Vec2};
 use pdfium_render::prelude::*;
@@ -235,6 +235,94 @@ fn compose(_pdfium: &Pdfium, d: &Doc, pages: &[usize], pap: (f32, f32), st: &Set
     Some(if rot { rot90(bw, bh, &buf) } else { (bw, bh, buf) })
 }
 
+/// Rettangolo pieno: segni di taglio e numerazione dei fogli del poster.
+fn mark_rect(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, w: i32, h: i32, c: [u8; 3]) {
+    for yy in y..y + h {
+        for xx in x..x + w {
+            if xx >= 0 && yy >= 0 && (xx as usize) < dw && (yy as usize) < dh {
+                let i = (yy as usize * dw + xx as usize) * 4;
+                dst[i..i + 3].copy_from_slice(&c);
+            }
+        }
+    }
+}
+
+/// Glifo 3x5 per la numerazione dei fogli (solo i caratteri usati: R, C e cifre).
+fn mark_glyph(ch: char) -> [u8; 5] {
+    match ch {
+        '0' => [0b111, 0b101, 0b101, 0b101, 0b111],
+        '1' => [0b010, 0b110, 0b010, 0b010, 0b111],
+        '2' => [0b111, 0b001, 0b111, 0b100, 0b111],
+        '3' => [0b111, 0b001, 0b111, 0b001, 0b111],
+        '4' => [0b101, 0b101, 0b111, 0b001, 0b001],
+        '5' => [0b111, 0b100, 0b111, 0b001, 0b111],
+        '6' => [0b111, 0b100, 0b111, 0b101, 0b111],
+        '7' => [0b111, 0b001, 0b001, 0b001, 0b001],
+        '8' => [0b111, 0b101, 0b111, 0b101, 0b111],
+        '9' => [0b111, 0b101, 0b111, 0b001, 0b111],
+        'R' => [0b110, 0b101, 0b110, 0b101, 0b101],
+        'C' => [0b011, 0b100, 0b100, 0b100, 0b011],
+        _ => [0; 5],
+    }
+}
+
+/// Testo minuscolo (glifi 3x5) per la numerazione dei fogli del poster.
+fn mark_text(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, s: &str, px: i32, c: [u8; 3]) {
+    let mut cx = x;
+    for ch in s.chars() {
+        let g = mark_glyph(ch);
+        for (r, bits) in g.iter().enumerate() {
+            for b in 0..3 {
+                if bits & (1 << (2 - b)) != 0 {
+                    mark_rect(dst, dw, dh, cx + b * px, y + r as i32 * px, px, px, c);
+                }
+            }
+        }
+        cx += 4 * px;
+    }
+}
+
+/// Segni di taglio e numero del foglio (R<riga>C<colonna>) nella striscia di sovrapposizione:
+/// cadono nella parte che viene tagliata o coperta dal foglio vicino, quindi non nascondono il disegno.
+fn poster_marks(buf: &mut [u8], bw: usize, bh: usize, eff: f32, ov_pt: f32, cols: usize, rows: usize, col: usize, row: usize) {
+    if ov_pt <= 0.3 { return; }
+    let band = (ov_pt * eff) as i32;
+    if band < 2 { return; }
+    let c = [90u8, 90, 90];
+    let w = ((1.5 * eff) as i32).max(1);
+    let tick = ((4.0 * 72.0 / 25.4 * eff) as i32).min(band).max(2);
+    let (bwi, bhi) = (bw as i32, bh as i32);
+    // tacche perpendicolari alla linea di taglio, dentro la striscia che viene tolta
+    if col > 0 { // linea di taglio verticale sinistra
+        mark_rect(buf, bw, bh, band - tick, 0, tick, w, c);
+        mark_rect(buf, bw, bh, band - tick, bhi - w, tick, w, c);
+    }
+    if col + 1 < cols { // linea di taglio verticale destra
+        mark_rect(buf, bw, bh, bwi - band, 0, tick, w, c);
+        mark_rect(buf, bw, bh, bwi - band, bhi - w, tick, w, c);
+    }
+    if row > 0 { // linea di taglio orizzontale superiore
+        mark_rect(buf, bw, bh, 0, band - tick, w, tick, c);
+        mark_rect(buf, bw, bh, bwi - w, band - tick, w, tick, c);
+    }
+    if row + 1 < rows { // linea di taglio orizzontale inferiore
+        mark_rect(buf, bw, bh, 0, bhi - band, w, tick, c);
+        mark_rect(buf, bw, bh, bwi - w, bhi - band, w, tick, c);
+    }
+    let s = band / 8; // altezza del testo: circa il 60% della striscia
+    if s < 1 { return; }
+    let label = format!("R{}C{}", row + 1, col + 1);
+    let tw = label.chars().count() as i32 * 4 * s - s;
+    let th = 5 * s;
+    let pad = (2.0 * 72.0 / 25.4 * eff) as i32 + 2;
+    let (tx, ty) = if row + 1 < rows { (pad, bhi - band + (band - th) / 2) }
+        else if row > 0 { (pad, (band - th) / 2) }
+        else if col + 1 < cols { (bwi - band + (band - tw).max(0) / 2, (band - th) / 2) }
+        else if col > 0 { ((band - tw).max(0) / 2, (band - th) / 2) }
+        else { return };
+    mark_text(buf, bw, bh, tx, ty, &label, s, c);
+}
+
 /// Compone UN foglio della stampa poster: la pagina viene ingrandita sull'intero poster
 /// (cols x rows fogli) e ogni foglio ne stampa la porzione `(col, row)`. La sovrapposizione
 /// `poster_ov` (mm) viene ripetuta sui lati interni, per unire i fogli senza tagliare il disegno.
@@ -267,6 +355,7 @@ fn compose_poster(d: &Doc, page: usize, pap: (f32, f32), st: &Settings, ppp: f32
     let mut buf = vec![255u8; bw * bh * 4];
     blit(&mut buf, bw, bh, &data, rw, rh, ((ox - x0) * eff).round() as i32, ((oy - y0) * eff).round() as i32);
     if apply_tone { tone(&mut buf, st); }
+    poster_marks(&mut buf, bw, bh, eff, ov, cols, rows, col, row);
     Some(if rot { rot90(bw, bh, &buf) } else { (bw, bh, buf) })
 }
 
@@ -323,6 +412,39 @@ fn find_all(t: &[char], q: &[char]) -> Vec<usize> {
 
 fn to_hex(b: &[u8]) -> String { b.iter().map(|x| format!("{x:02x}")).collect() }
 fn from_hex(s: &str) -> Vec<u8> { (0..s.len() / 2).filter_map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok()).collect() }
+
+/// Ultima release pubblicata su GitHub: (messaggio per l'utente, pagina da aprire).
+/// Usa curl (presente su Windows 10+, macOS e Linux) in un thread separato: l'interfaccia non si blocca.
+fn latest_release() -> (String, String) {
+    let url = "https://api.github.com/repos/gsepp86/Pdf-Reader-CP-MacOS-Linux/releases/latest";
+    let out = std::process::Command::new("curl")
+        .args(["-sS", "-L", "-m", "12", "-H", "Accept: application/vnd.github+json", url])
+        .output();
+    let Ok(out) = out else { return ("Controllo non riuscito: curl non disponibile".into(), String::new()) };
+    if !out.status.success() { return ("Controllo non riuscito: nessuna connessione".into(), String::new()) }
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
+        return ("Risposta di GitHub non leggibile".into(), String::new())
+    };
+    let tag = v.get("tag_name").and_then(|t| t.as_str()).unwrap_or("").trim_start_matches('v').to_string();
+    let page = v.get("html_url").and_then(|t| t.as_str()).unwrap_or(GITHUB_URL).to_string();
+    if tag.is_empty() {
+        let why = v.get("message").and_then(|t| t.as_str()).unwrap_or("");
+        let m = if why.contains("rate limit") { "Controllo non riuscito: GitHub ha limitato le richieste, riprova piu' tardi" }
+                else { "Nessuna release pubblicata su GitHub" };
+        return (m.into(), String::new())
+    }
+    let cur = env!("CARGO_PKG_VERSION");
+    if version_newer(&tag, cur) { (format!("Nuova versione disponibile: {tag} (questa e' {cur})"), page) }
+    else { (format!("Hai gia' la versione piu' recente ({cur})"), page) }
+}
+
+fn version_newer(a: &str, b: &str) -> bool {
+    fn t(v: &str) -> (u32, u32, u32) {
+        let mut n = v.split(|c: char| !c.is_ascii_digit()).filter(|s| !s.is_empty()).map(|s| s.parse::<u32>().unwrap_or(0));
+        (n.next().unwrap_or(0), n.next().unwrap_or(0), n.next().unwrap_or(0))
+    }
+    t(a) > t(b)
+}
 
 fn confirm(title: &str, text: &str) -> bool {
     rfd::MessageDialog::new().set_title(title).set_description(text).set_buttons(rfd::MessageButtons::YesNo).set_level(rfd::MessageLevel::Warning).show() == rfd::MessageDialogResult::Yes
@@ -458,6 +580,7 @@ struct App {
     show_print: bool, prev: usize, pv: Option<(PvKey, egui::TextureHandle)>,
     msg: String, msg_at: Option<Instant>, logo: egui::TextureHandle, fs: bool, show_info: bool, scroll_tab: bool,
     ipc: Option<std::sync::mpsc::Receiver<Ipc>>, started: bool, sel: Option<Sel>, paper: (f32, f32), paper_key: (String, String),
+    upd: Option<std::sync::mpsc::Receiver<(String, String)>>, upd_msg: String, upd_url: String,
     pv_raw: Option<(RawKey, usize, usize, Vec<u8>)>, pv_gen: u64, last_size: (i32, i32), last_change: Instant,
     pan: bool, search: String, search_hit: Option<(usize, usize)>, search_focus: bool, jump: bool,
     show_cfg: bool, cfg: Settings, cfg_tab: usize,
@@ -491,7 +614,7 @@ impl App {
         detect_byte_order(pdfium);
         let start_pan = st.start_pan;
         let ipc = listener.map(|l| { let (tx, rx) = std::sync::mpsc::channel(); serve(l, tx, cc.egui_ctx.clone()); rx });
-        let mut app = App { pdfium, docs: vec![], tab: Tab::Home, draft: st.clone(), st, printers, show_print: false, prev: 0, pv: None, msg: String::new(), msg_at: None, logo, fs: false, show_info: false, scroll_tab: false, ipc, started: false, sel: None, paper: A4, paper_key: (String::new(), String::new()), pv_raw: None, pv_gen: 0, last_size: (0, 0), last_change: Instant::now(), pan: start_pan, search: String::new(), search_hit: None, search_focus: false, jump: false, show_cfg: false, cfg: Settings::default(), cfg_tab: 0, show_pall: false, pa_mode: false, over_acc: 0.0, over_at: Instant::now(), edge: (true, false), scroll_reset: None, tabs_overflow: false, task: None, tab_drag: None, next_id: 1 };
+        let mut app = App { pdfium, docs: vec![], tab: Tab::Home, draft: st.clone(), st, printers, show_print: false, prev: 0, pv: None, msg: String::new(), msg_at: None, logo, fs: false, show_info: false, scroll_tab: false, ipc, started: false, sel: None, paper: A4, paper_key: (String::new(), String::new()), pv_raw: None, pv_gen: 0, last_size: (0, 0), last_change: Instant::now(), pan: start_pan, search: String::new(), search_hit: None, search_focus: false, jump: false, show_cfg: false, cfg: Settings::default(), cfg_tab: 0, show_pall: false, pa_mode: false, over_acc: 0.0, over_at: Instant::now(), edge: (true, false), scroll_reset: None, tabs_overflow: false, task: None, tab_drag: None, next_id: 1, upd: None, upd_msg: String::new(), upd_url: String::new() };
         for a in init { app.open(a); }
         app
     }
@@ -507,6 +630,20 @@ impl App {
     }
 
     fn toast(&mut self, s: String) { self.msg = s; self.msg_at = Some(Instant::now()); }
+
+    /// Cerca su GitHub la release piu' recente in un thread separato (l'interfaccia resta viva).
+    fn check_update(&mut self, ctx: &egui::Context) {
+        if self.upd.is_some() { return; }
+        self.upd_msg = "Controllo in corso...".to_string();
+        self.upd_url.clear();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.upd = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(latest_release());
+            ctx.request_repaint();
+        });
+    }
 
     fn ensure_chars(&mut self, di: usize, page: usize) {
         if di >= self.docs.len() || self.docs[di].text.contains_key(&page) { return; }
@@ -970,7 +1107,7 @@ impl App {
                                     ui.add(egui::DragValue::new(&mut self.draft.poster_ov).range(0.0..=30.0).speed(0.5).suffix(" mm"))
                                         .on_hover_text("Margine ripetuto sui lati interni dei fogli, per unirli senza tagliare il disegno");
                                 });
-                                ui.label(RichText::new("La pagina viene ingrandita sull'intero poster: ogni foglio ne stampa una parte, da unire.").weak().small());
+                                ui.label(RichText::new("La pagina viene ingrandita sull'intero poster: ogni foglio ne stampa una parte, da unire. Con sovrapposizione maggiore di zero il foglio riporta i segni di taglio e la scritta R<riga>C<colonna>.").weak().small());
                             }
                             ui.add_enabled_ui(!self.draft.poster, |ui| {
                                 ui.horizontal(|ui| {
@@ -1224,6 +1361,14 @@ impl eframe::App for App {
         let before = self.st.clone();
         if !self.started { self.started = true; if self.st.start_max && !self.st.background { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true)); } } // si apre sempre ingrandita
         // PDF inviati da un secondo avvio del programma: si aprono qui, in nuove schede
+        // controllo aggiornamenti: il risultato arriva dal thread che interroga GitHub
+        if let Some(rx) = self.upd.take() {
+            match rx.try_recv() {
+                Ok((m, u)) => { self.upd_msg = m; self.upd_url = u; }
+                Err(std::sync::mpsc::TryRecvError::Empty) => { self.upd = Some(rx); ctx.request_repaint_after(Duration::from_millis(250)); }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => { self.upd_msg = "Controllo non riuscito".into(); }
+            }
+        }
         let msgs: Vec<Ipc> = self.ipc.as_ref().map(|r| r.try_iter().collect::<Vec<Ipc>>()).unwrap_or_default();
         if !msgs.is_empty() && !self.st.background { // in secondo piano: i file si aprono senza portare la finestra davanti
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
@@ -1610,7 +1755,7 @@ impl eframe::App for App {
                     ui.image(egui::load::SizedTexture::new(self.logo.id(), Vec2::splat(72.0)));
                     ui.heading("PDF Reader CP");
                     ui.label("Programma opensource progettato da Peppe CP con l'aiuto della IA.");
-                    ui.label(RichText::new("Versione 2.2").weak());
+                    ui.label(RichText::new(format!("Versione {}", env!("CARGO_PKG_VERSION"))).weak());
                     ui.add_space(8.0);
                     ui.separator();
                     ui.scope(|ui| {
@@ -1624,6 +1769,16 @@ impl eframe::App for App {
                     }
                     ui.add_space(4.0);
                     ui.hyperlink_to("github.com/gsepp86/Pdf-Reader-CP", GITHUB_URL);
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+                    if ui.add_enabled(self.upd.is_none(), Button::new("Cerca la versione piu' recente"))
+                        .on_hover_text("Controlla su GitHub se e' stata pubblicata una versione nuova").clicked() {
+                        self.check_update(ctx);
+                    }
+                    if self.upd.is_some() { ui.spinner(); }
+                    if !self.upd_msg.is_empty() { ui.label(RichText::new(&self.upd_msg).weak()); }
+                    if !self.upd_url.is_empty() { ui.hyperlink_to("Apri la pagina delle release", self.upd_url.clone()); }
                 });
             });
             if !open { self.show_info = false; }

@@ -1,11 +1,11 @@
-# PDF Reader CP 2.2
+# PDF Reader CP 2.6
 Programma opensource progettato da Peppe CP con l'aiuto della IA.
 
 Lettore PDF a schede in Rust (egui + PDFium): una sola barra in alto con schede e comandi di stampa, documento a tutto schermo.
 
 ## Creare l'installer per Windows
 **Metodo 1 - sul tuo PC (Windows 10/11 x64):** installa Rust (https://rustup.rs), poi doppio clic su `build.bat`.
-Scarica da solo pdfium.dll e Inno Setup e produce `dist\PDFReaderCP_Setup_2.2.exe`.
+Scarica da solo pdfium.dll e Inno Setup e produce `dist\PDFReaderCP_Setup_2.6.exe`.
 
 **Metodo 2 - senza installare nulla:** carica la cartella su GitHub, poi Actions > "Crea installer" > Run workflow.
 L'installer si scarica dagli "Artifacts" a fine lavoro.
@@ -13,6 +13,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 ## Uso
 - Barra del titolo (una sola riga): **File** | schede (tutto lo spazio disponibile) | icone **Stampa…**, **Stampa subito**, **STAMPA TUTTO** | riduci / massimizza / chiudi.
 - Menu **File**: Apri, Chiudi scheda / tutte, Stampa…, Stampa subito, STAMPA TUTTO, Stampante, Pagine per foglio, Schermo intero, **Info**, Esci.
+- **Info**: mostra la versione (2.6) e il pulsante **Cerca la versione piu' recente**, che controlla le release su GitHub senza bloccare il programma e, se ce n'e' una nuova, offre il link alla pagina delle release.
 - **Stampa…** (Ctrl+P): anteprima dettagliata (1, 2, 4, 6, 9, 16 pagine per foglio), copie, fascicola, intervallo, scala, rotazione, centratura. La finestra si sposta trascinando la barra del titolo.
 - **Stampa subito** (Ctrl+Maiusc+P): scheda corrente con le ultime impostazioni, senza anteprima.
 - **STAMPA TUTTO**: tutte le schede aperte, ognuna per intero, in sequenza, con un solo messaggio di conferma.
@@ -33,7 +34,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 - **Finestra**: si sposta trascinando qualsiasi spazio libero della barra in alto (anche tra le schede e accanto all'icona); doppio clic sulla barra = ingrandisci/ripristina. Le stampanti sono elencate in ordine alfabetico.
 - **Impostazioni** (File > Impostazioni..., Ctrl+,): finestra con due sezioni, Generale (apri sempre in secondo piano, avvia ingrandita, strumento e vista iniziali) e Stampa (stampante, copie, pagine per foglio, colore, conferma con piu' copie). Si salvano con "Salva" nel file settings.json.
 - **In secondo piano**: con l'opzione attiva (anche da File > Apri sempre in secondo piano) la finestra parte senza prendere il focus e i PDF aperti da un secondo avvio si aggiungono come schede senza portarla davanti.
-- **Stampa poster**: nella finestra Stampa... l'opzione *Stampa poster (una pagina su piu' fogli)* ingrandisce una sola pagina e la divide su piu' fogli (griglie 1x2, 2x1, 2x2, 3x2, 2x3, 3x3, 4x4) con sovrapposizione regolabile in millimetri sui lati interni, per unire i fogli senza tagliare il disegno. L'anteprima mostra il singolo foglio con riga e colonna nella griglia; con il poster sono disattivate le pagine per foglio e la scala (la pagina e' adattata all'intero poster).
+- **Stampa poster**: nella finestra Stampa... l'opzione *Stampa poster (una pagina su piu' fogli)* ingrandisce una sola pagina e la divide su piu' fogli (griglie 1x2, 2x1, 2x2, 3x2, 2x3, 3x3, 4x4) con sovrapposizione regolabile in millimetri sui lati interni, per unire i fogli senza tagliare il disegno. L'anteprima mostra il singolo foglio con riga e colonna nella griglia; con il poster sono disattivate le pagine per foglio e la scala (la pagina e' adattata all'intero poster). Nella striscia di sovrapposizione ogni foglio riporta i **segni di taglio** (due tacche per lato interno) e la scritta **R<riga>C<colonna>** per riconoscere e montare i fogli; con sovrapposizione 0 mm i segni non vengono stampati.
 - **Intervallo personalizzato**: si possono ripetere le pagine, per esempio `1,1` (pagina 1 due volte, utile con 2 su 1), `2x3` (pagina 2 tre volte) o `1-3x2` (ogni pagina due volte).
 - **Schede**: la barra di scorrimento compare sotto le schede solo quando sono troppe.
 

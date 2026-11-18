@@ -1,6 +1,6 @@
 # PDF Reader CP per macOS e Linux
 
-Port della versione Windows 2.2: stesso programma (egui + PDFium), stesso look, con stampa
+Port della versione Windows 2.6: stesso programma (egui + PDFium), stesso look, con stampa
 funzionante su macOS e Linux.
 
 ## Cosa cambia rispetto a Windows
@@ -21,7 +21,11 @@ La finestra **Stampa…** (Ctrl+P) e' la stessa di Windows: stampante, copie, fa
 intervallo pagine, pagine per foglio, scala, rotazione, centratura, colore e chiaro/scuro,
 con anteprima del foglio. Si puo' spostare trascinandola per la barra del titolo e comprende
 anche la **stampa poster**: una pagina ingrandita e divisa su piu' fogli (fino a 4x4) con
-sovrapposizione in millimetri per unirli.
+sovrapposizione in millimetri per unirli; nella striscia di sovrapposizione vengono stampati
+i segni di taglio e la scritta R<riga>C<colonna> di ogni foglio.
+
+La finestra **Info** mostra la versione e il pulsante **Cerca la versione piu' recente**
+(release su GitHub), con il link alla pagina quando ce n'e' una nuova.
 
 Al posto della finestra "Proprieta' driver" c'e' la sezione **Opzioni stampante (CUPS)**:
 le opzioni della coda (fronte/retro, vassoio, qualita', colore, finitura...) sono lette da
@@ -47,8 +51,8 @@ finestra lo dice all'inizio del lavoro invece di fallire in silenzio.
 
 Lo script scarica PDFium da `bblanchon/pdfium-binaries`, compila in release e crea:
 
-- Linux: `dist/PDFReaderCP_2.2.0_amd64.deb` e `dist/PDFReaderCP-2.2.0-linux-x64.tar.gz`
-- macOS: `dist/PDFReaderCP-2.2.0-macos-universal.zip` (contiene `PDFReaderCP.app`)
+- Linux: `dist/PDFReaderCP_2.6.0_amd64.deb` e `dist/PDFReaderCP-2.6.0-linux-x64.tar.gz`
+- macOS: `dist/PDFReaderCP-2.6.0-macos-universal.zip` (contiene `PDFReaderCP.app`)
 
 Dipendenze per compilare su Linux:
 
@@ -70,7 +74,7 @@ firmato solo ad-hoc (nessun certificato Apple): al primo avvio fai clic destro s
 **Linux (.deb)**
 
 ```bash
-sudo dpkg -i PDFReaderCP_2.2.0_amd64.deb
+sudo dpkg -i PDFReaderCP_2.6.0_amd64.deb
 sudo apt -f install   # solo se mancano dipendenze
 ```
 
