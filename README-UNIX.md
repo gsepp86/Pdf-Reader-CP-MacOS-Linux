@@ -19,7 +19,9 @@ Il codice Windows non e' stato toccato: le differenze sono tutte dietro
 
 La finestra **Stampa…** (Ctrl+P) e' la stessa di Windows: stampante, copie, fascicola,
 intervallo pagine, pagine per foglio, scala, rotazione, centratura, colore e chiaro/scuro,
-con anteprima del foglio.
+con anteprima del foglio. Si puo' spostare trascinandola per la barra del titolo e comprende
+anche la **stampa poster**: una pagina ingrandita e divisa su piu' fogli (fino a 4x4) con
+sovrapposizione in millimetri per unirli.
 
 Al posto della finestra "Proprieta' driver" c'e' la sezione **Opzioni stampante (CUPS)**:
 le opzioni della coda (fronte/retro, vassoio, qualita', colore, finitura...) sono lette da

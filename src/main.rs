@@ -51,10 +51,10 @@ impl PrintPrefs {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-struct Settings { printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, mine: PrintPrefs }
+struct Settings { printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, poster: bool, poster_cols: u32, poster_rows: u32, poster_ov: f32, mine: PrintPrefs }
 impl Default for Settings {
     fn default() -> Self {
-        Self { printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, mine: PrintPrefs::default() }
+        Self { printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, poster: false, poster_cols: 2, poster_rows: 2, poster_ov: 5.0, mine: PrintPrefs::default() }
     }
 }
 impl Settings {
@@ -77,6 +77,16 @@ impl Settings {
             self.nup = 1; self.sel = PageSel::All; self.custom = "1-".into();
             self.scale = ScaleMode::Fit; self.pct = 100; self.collate = true;
         }
+    }
+
+    /// Griglia della stampa poster (colonne x righe di fogli in cui si divide la pagina).
+    fn poster_grid(&self) -> (usize, usize) {
+        (self.poster_cols.clamp(1, 6) as usize, self.poster_rows.clamp(1, 6) as usize)
+    }
+
+    /// Fogli in cui viene divisa ogni pagina (1 se la stampa poster e' spenta).
+    fn poster_tiles(&self) -> usize {
+        if self.poster { let (c, r) = self.poster_grid(); c * r } else { 1 }
     }
 
     fn path() -> Option<PathBuf> { dirs::config_dir().map(|d| d.join("PDFReaderCP").join("settings.json")) }
@@ -113,6 +123,12 @@ fn pages_for(st: &Settings, cur: usize, n: usize) -> Vec<usize> {
             v
         }
     }
+}
+
+/// Fogli prodotti da `pages` pagine, senza contare le copie.
+fn sheet_count(st: &Settings, pages: usize) -> usize {
+    let nup = st.nup.max(1) as usize;
+    ((pages + nup - 1) / nup) * st.poster_tiles()
 }
 
 fn short(s: &str, n: usize) -> String {
@@ -215,6 +231,41 @@ fn compose(_pdfium: &Pdfium, d: &Doc, pages: &[usize], pap: (f32, f32), st: &Set
             }
         }
     }
+    if apply_tone { tone(&mut buf, st); }
+    Some(if rot { rot90(bw, bh, &buf) } else { (bw, bh, buf) })
+}
+
+/// Compone UN foglio della stampa poster: la pagina viene ingrandita sull'intero poster
+/// (cols x rows fogli) e ogni foglio ne stampa la porzione `(col, row)`. La sovrapposizione
+/// `poster_ov` (mm) viene ripetuta sui lati interni, per unire i fogli senza tagliare il disegno.
+fn compose_poster(d: &Doc, page: usize, pap: (f32, f32), st: &Settings, ppp: f32, apply_tone: bool, col: usize, row: usize) -> Option<(usize, usize, Vec<u8>)> {
+    let (pw, ph) = d.sizes[page];
+    if pw <= 0.0 || ph <= 0.0 { return None; }
+    let (cols, rows) = st.poster_grid();
+    if col >= cols || row >= rows { return None; }
+    let sheet_land = st.rotate && pw > ph;
+    let (mx, mn) = (pap.0.max(pap.1), pap.0.min(pap.1));
+    let (sw, sh) = if sheet_land { (mx, mn) } else { (mn, mx) };
+    let rot = sheet_land != (pap.0 > pap.1);
+    let (cw, ch) = (sw * cols as f32, sh * rows as f32); // tela del poster intero (punti)
+    let fit = (cw / pw).min(ch / ph);
+    let (iwp, ihp) = (pw * fit, ph * fit);
+    let (ox, oy) = ((cw - iwp) / 2.0, (ch - ihp) / 2.0); // pagina centrata sulla tela
+    let ov = st.poster_ov.clamp(0.0, 30.0) * 72.0 / 25.4; // mm -> punti
+    let x0 = (col as f32 * sw - ov).max(0.0);
+    let x1 = ((col as f32 + 1.0) * sw + ov).min(cw);
+    let y0 = (row as f32 * sh - ov).max(0.0);
+    let y1 = ((row as f32 + 1.0) * sh + ov).min(ch);
+    if x1 <= x0 || y1 <= y0 { return None; }
+    // la pagina intera si rende a `ppp` con un tetto di pixel: i poster grandi restano
+    // stampabili senza occupare memoria sproporzionata (i fogli vengono ritagliati da qui)
+    let cap = (24_000_000.0f32 / (iwp * ppp * ihp * ppp).max(1.0)).sqrt().min(1.0);
+    let (rw, rh, data) = render(&d.pdf, page, ((iwp * ppp * cap) as i32).max(8))?;
+    let eff = rw as f32 / pw; // pixel per punto effettivi
+    let bw = (((x1 - x0) * eff) as usize).max(1);
+    let bh = (((y1 - y0) * eff) as usize).max(1);
+    let mut buf = vec![255u8; bw * bh * 4];
+    blit(&mut buf, bw, bh, &data, rw, rh, ((ox - x0) * eff).round() as i32, ((oy - y0) * eff).round() as i32);
     if apply_tone { tone(&mut buf, st); }
     Some(if rot { rot90(bw, bh, &buf) } else { (bw, bh, buf) })
 }
@@ -388,7 +439,7 @@ struct Doc { id: u64, pdf: PdfDocument<'static>, path: PathBuf, name: String, si
 #[derive(PartialEq, Clone, Copy)]
 enum Tab { Home, Doc(usize) }
 type PvKey = (u64, ColorMode, i32); // versione del foglio + colore + chiaro/scuro
-type RawKey = (usize, usize, PageSel, String, u32, bool, ScaleMode, u32, bool, bool, (i32, i32));
+type RawKey = (usize, usize, PageSel, String, u32, bool, ScaleMode, u32, bool, bool, (i32, i32), (bool, (u32, u32), f32));
 /// Carattere del testo di una pagina: unicode + riquadro [sinistra, basso, destra, alto] in punti PDF.
 struct TCh { c: char, r: [f32; 4] }
 /// Selezione di testo: documento, pagina, indice del primo e dell'ultimo carattere.
@@ -557,7 +608,7 @@ impl App {
         let nup = st.nup.max(1) as usize;
         let c = st.copies.max(1) as usize;
         let total: usize = ids.iter().filter_map(|id| self.docs.iter().find(|d| d.id == *id))
-            .map(|d| ((pages_for(&st, d.cur, d.sizes.len()).len() + nup - 1) / nup) * c).sum();
+            .map(|d| ((pages_for(&st, d.cur, d.sizes.len()).len() + nup - 1) / nup) * c * st.poster_tiles()).sum();
         self.task = Some(PrintTask { ids, st, di: 0, job: None, sheets: vec![], order: vec![], pos: 0, area: (595.0, 842.0, 72.0), last: None, total, done: 0, cancel: false });
     }
 
@@ -584,7 +635,8 @@ impl App {
             let pages = pages_for(&t.st, d.cur, d.sizes.len());
             if pages.is_empty() { return Err(format!("Nessuna pagina da stampare in {}", d.name)); }
             let nup = t.st.nup.max(1) as usize;
-            t.sheets = pages.chunks(nup).map(|c| c.to_vec()).collect();
+            let per = t.st.poster_tiles(); // con il poster ogni pagina occupa piu' fogli
+            t.sheets = pages.chunks(nup).flat_map(|c| (0..per).map(move |_| c.to_vec())).collect();
             let (c, ns) = (t.st.copies.max(1) as usize, t.sheets.len());
             t.order = if t.st.collate { (0..c).flat_map(|_| 0..ns).collect() } else { (0..ns).flat_map(|s| std::iter::repeat(s).take(c)).collect() };
             let dm: Option<Vec<u8>> = if t.st.drv_printer == t.st.printer && !t.st.drv_mode.is_empty() { Some(from_hex(&t.st.drv_mode)) } else { None };
@@ -601,7 +653,13 @@ impl App {
             if t.last.as_ref().map(|l| l.0) != Some(s) {
                 let (aw, ah, _) = t.area;
                 #[allow(unused_mut)] // `b` serve mutabile solo su Windows (RGBA -> BGRA)
-                let (w, h, mut b) = compose(&self.pdfium, d, &t.sheets[s], (aw, ah), &t.st, 300.0 / 72.0, true).ok_or("Rendering della pagina non riuscito")?;
+                let (w, h, mut b) = if t.st.poster {
+                    let (cols, _rows) = t.st.poster_grid();
+                    let tile = s % t.st.poster_tiles();
+                    compose_poster(d, t.sheets[s][0], (aw, ah), &t.st, 300.0 / 72.0, true, tile % cols, tile / cols)
+                } else {
+                    compose(&self.pdfium, d, &t.sheets[s], (aw, ah), &t.st, 300.0 / 72.0, true)
+                }.ok_or("Rendering della pagina non riuscito")?;
                 #[cfg(windows)]
                 for q in b.chunks_exact_mut(4) { q.swap(0, 2); } // RGBA -> BGRA per GDI (su macOS/Linux resta RGBA per il PNG)
                 t.last = Some((s, w, h, b));
@@ -632,12 +690,14 @@ impl App {
         let c = self.st.copies.max(1);
         let nup = self.st.nup.max(1) as usize;
         let pagine: usize = self.docs.iter().map(|d| d.sizes.len()).sum();
-        let fogli: usize = self.docs.iter().map(|d| (d.sizes.len() + nup - 1) / nup).sum(); // fogli per copia
+        let fogli: usize = self.docs.iter().map(|d| ((d.sizes.len() + nup - 1) / nup) * self.st.poster_tiles()).sum(); // fogli per copia
         let tot = fogli * c as usize;
         let warn = c > 1 && self.st.ask_copies;
         let colore = match self.st.color { ColorMode::Color => "COLORI", ColorMode::Gray => "SCALA DI GRIGI", ColorMode::Bw => "BIANCO E NERO" };
         let stampante = self.st.printer.to_uppercase();
-        egui::Window::new("STAMPA TUTTO").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+        let pp = ctx.screen_rect().center() - Vec2::new(250.0, 220.0);
+        egui::Window::new("STAMPA TUTTO").open(&mut open).collapsible(false).resizable(false).movable(true)
+            .default_pos(egui::pos2(pp.x.max(8.0), pp.y.max(8.0))).show(ctx, |ui| {
             ui.set_min_width(440.0);
             ui.label(RichText::new("STAMPARE CON LE IMPOSTAZIONI ATTUALI?").strong().size(18.0));
             ui.add_space(6.0);
@@ -793,15 +853,22 @@ impl App {
         }
         let nup = self.draft.nup.max(1) as usize;
         let pages = pages_for(&self.draft, self.docs[di].cur, n);
-        let sheets = (pages.len() + nup - 1) / nup;
+        let per = self.draft.poster_tiles(); // fogli per pagina (1 se il poster e' spento)
+        let sheets = sheet_count(&self.draft, pages.len());
         let prev = self.prev.min(sheets.saturating_sub(1));
         // anteprima: il foglio si ricompone solo se cambiano pagine/scala/carta; colore e chiaro/scuro si applicano al volo
         let d0 = &self.draft;
-        let rk: RawKey = (di, prev, d0.sel, d0.custom.clone(), d0.nup, d0.border, d0.scale, d0.pct, d0.rotate, d0.center, (self.paper.0 as i32, self.paper.1 as i32));
+        let rk: RawKey = (di, prev, d0.sel, d0.custom.clone(), d0.nup, d0.border, d0.scale, d0.pct, d0.rotate, d0.center, (self.paper.0 as i32, self.paper.1 as i32), (d0.poster, (d0.poster_cols, d0.poster_rows), d0.poster_ov));
         if self.pv_raw.as_ref().map(|r| &r.0) != Some(&rk) {
             self.pv_gen += 1;
-            self.pv_raw = pages.chunks(nup).nth(prev)
-                .and_then(|chunk| compose(&self.pdfium, &self.docs[di], chunk, self.paper, &self.draft, 1.5, false))
+            self.pv_raw = pages.chunks(nup).nth(prev / per)
+                .and_then(|chunk| if self.draft.poster {
+                    let (cols, _rows) = self.draft.poster_grid();
+                    let tile = prev % per;
+                    compose_poster(&self.docs[di], chunk[0], self.paper, &self.draft, 1.5, false, tile % cols, tile / cols)
+                } else {
+                    compose(&self.pdfium, &self.docs[di], chunk, self.paper, &self.draft, 1.5, false)
+                })
                 .map(|(w, h, b)| (rk, w, h, b));
         }
         let tk: PvKey = (self.pv_gen, self.draft.color, self.draft.bright);
@@ -813,7 +880,10 @@ impl App {
             });
         }
         let maxh = (ctx.screen_rect().height() - 140.0).max(320.0);
-        egui::Window::new("Stampa").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+        // finestra spostabile: si trascina dalla barra del titolo (egui ricorda la posizione)
+        let pos = ctx.screen_rect().center() - Vec2::new(430.0, 330.0);
+        egui::Window::new("Stampa").open(&mut open).collapsible(false).resizable(false).movable(true)
+            .default_pos(egui::pos2(pos.x.max(8.0), pos.y.max(8.0))).show(ctx, |ui| {
             { // pulsanti e testi piu' grandi
                 let s = ui.style_mut();
                 s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(15.5));
@@ -880,19 +950,43 @@ impl App {
                         });
                         ui.group(|ui| {
                             ui.label(RichText::new("Pagine per foglio e scala").strong().color(ACCENT));
-                            ui.horizontal(|ui| {
-                                ui.label("Pagine per foglio");
-                                egui::ComboBox::from_id_salt("nu").width(90.0).selected_text(format!("{} su 1", self.draft.nup)).show_ui(ui, |ui| {
-                                    for k in NUPS { ui.selectable_value(&mut self.draft.nup, k, format!("{k} su 1")); }
-                                });
-                            });
-                            ui.add_enabled_ui(self.draft.nup > 1, |ui| ui.checkbox(&mut self.draft.border, "Bordo attorno alle pagine"));
-                            ui.add_enabled_ui(self.draft.nup == 1, |ui| {
-                                ui.radio_value(&mut self.draft.scale, ScaleMode::Fit, "Adatta alla pagina");
-                                ui.radio_value(&mut self.draft.scale, ScaleMode::Actual, "Dimensioni reali (100%)");
+                            if ui.checkbox(&mut self.draft.poster, "Stampa poster (una pagina su piu' fogli)").changed() && self.draft.poster {
+                                self.draft.nup = 1; // il poster divide sempre una sola pagina
+                            }
+                            if self.draft.poster {
                                 ui.horizontal(|ui| {
-                                    ui.radio_value(&mut self.draft.scale, ScaleMode::Custom, "Proporzione personalizzata");
-                                    ui.add_enabled(self.draft.scale == ScaleMode::Custom, egui::DragValue::new(&mut self.draft.pct).range(25..=200).suffix(" %"));
+                                    ui.label("Griglia di fogli");
+                                    let mut g = (self.draft.poster_cols, self.draft.poster_rows);
+                                    egui::ComboBox::from_id_salt("po").width(90.0).selected_text(format!("{} x {}", g.0, g.1)).show_ui(ui, |ui| {
+                                        for (c, r) in [(1u32, 2u32), (2, 1), (2, 2), (3, 2), (2, 3), (3, 3), (4, 4)] {
+                                            ui.selectable_value(&mut g, (c, r), format!("{c} x {r}"));
+                                        }
+                                    });
+                                    if g != (self.draft.poster_cols, self.draft.poster_rows) { self.draft.poster_cols = g.0; self.draft.poster_rows = g.1; }
+                                    ui.label(RichText::new(format!("= {} fogli per pagina", g.0 * g.1)).weak());
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Sovrapposizione");
+                                    ui.add(egui::DragValue::new(&mut self.draft.poster_ov).range(0.0..=30.0).speed(0.5).suffix(" mm"))
+                                        .on_hover_text("Margine ripetuto sui lati interni dei fogli, per unirli senza tagliare il disegno");
+                                });
+                                ui.label(RichText::new("La pagina viene ingrandita sull'intero poster: ogni foglio ne stampa una parte, da unire.").weak().small());
+                            }
+                            ui.add_enabled_ui(!self.draft.poster, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label("Pagine per foglio");
+                                    egui::ComboBox::from_id_salt("nu").width(90.0).selected_text(format!("{} su 1", self.draft.nup)).show_ui(ui, |ui| {
+                                        for k in NUPS { ui.selectable_value(&mut self.draft.nup, k, format!("{k} su 1")); }
+                                    });
+                                });
+                                ui.add_enabled_ui(self.draft.nup > 1, |ui| ui.checkbox(&mut self.draft.border, "Bordo attorno alle pagine"));
+                                ui.add_enabled_ui(self.draft.nup == 1, |ui| {
+                                    ui.radio_value(&mut self.draft.scale, ScaleMode::Fit, "Adatta alla pagina");
+                                    ui.radio_value(&mut self.draft.scale, ScaleMode::Actual, "Dimensioni reali (100%)");
+                                    ui.horizontal(|ui| {
+                                        ui.radio_value(&mut self.draft.scale, ScaleMode::Custom, "Proporzione personalizzata");
+                                        ui.add_enabled(self.draft.scale == ScaleMode::Custom, egui::DragValue::new(&mut self.draft.pct).range(25..=200).suffix(" %"));
+                                    });
                                 });
                             });
                             ui.checkbox(&mut self.draft.rotate, "Ruota automaticamente");
@@ -929,7 +1023,13 @@ impl App {
                     ui.horizontal_wrapped(|ui| {
                         for p in 0..sheets.min(40) { if ui.selectable_label(prev == p, (p + 1).to_string()).clicked() { self.prev = p; } }
                     });
-                    ui.label(format!("Foglio {} di {} · {} pag. per foglio", prev + 1, sheets.max(1), nup));
+                    if self.draft.poster {
+                        let (cols, rows) = self.draft.poster_grid();
+                        let tile = prev % per;
+                        ui.label(format!("Foglio {} di {} · poster {} x {} (riga {}, colonna {})", prev + 1, sheets.max(1), cols, rows, tile / cols + 1, tile % cols + 1));
+                    } else {
+                        ui.label(format!("Foglio {} di {} · {} pag. per foglio", prev + 1, sheets.max(1), nup));
+                    }
                 });
             });
             ui.separator();

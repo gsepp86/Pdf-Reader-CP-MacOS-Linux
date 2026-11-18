@@ -13,7 +13,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 ## Uso
 - Barra del titolo (una sola riga): **File** | schede (tutto lo spazio disponibile) | icone **Stampa…**, **Stampa subito**, **STAMPA TUTTO** | riduci / massimizza / chiudi.
 - Menu **File**: Apri, Chiudi scheda / tutte, Stampa…, Stampa subito, STAMPA TUTTO, Stampante, Pagine per foglio, Schermo intero, **Info**, Esci.
-- **Stampa…** (Ctrl+P): anteprima dettagliata (1, 2, 4, 6, 9, 16 pagine per foglio), copie, fascicola, intervallo, scala, rotazione, centratura.
+- **Stampa…** (Ctrl+P): anteprima dettagliata (1, 2, 4, 6, 9, 16 pagine per foglio), copie, fascicola, intervallo, scala, rotazione, centratura. La finestra si sposta trascinando la barra del titolo.
 - **Stampa subito** (Ctrl+Maiusc+P): scheda corrente con le ultime impostazioni, senza anteprima.
 - **STAMPA TUTTO**: tutte le schede aperte, ognuna per intero, in sequenza, con un solo messaggio di conferma.
 - Molti PDF: Ctrl+Tab / Ctrl+Maiusc+Tab cambiano scheda, Ctrl+W la chiude, clic con la rotellina sulla scheda la chiude, rotellina del mouse sulla barra scorre le schede.
@@ -33,6 +33,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 - **Finestra**: si sposta trascinando qualsiasi spazio libero della barra in alto (anche tra le schede e accanto all'icona); doppio clic sulla barra = ingrandisci/ripristina. Le stampanti sono elencate in ordine alfabetico.
 - **Impostazioni** (File > Impostazioni..., Ctrl+,): finestra con due sezioni, Generale (apri sempre in secondo piano, avvia ingrandita, strumento e vista iniziali) e Stampa (stampante, copie, pagine per foglio, colore, conferma con piu' copie). Si salvano con "Salva" nel file settings.json.
 - **In secondo piano**: con l'opzione attiva (anche da File > Apri sempre in secondo piano) la finestra parte senza prendere il focus e i PDF aperti da un secondo avvio si aggiungono come schede senza portarla davanti.
+- **Stampa poster**: nella finestra Stampa... l'opzione *Stampa poster (una pagina su piu' fogli)* ingrandisce una sola pagina e la divide su piu' fogli (griglie 1x2, 2x1, 2x2, 3x2, 2x3, 3x3, 4x4) con sovrapposizione regolabile in millimetri sui lati interni, per unire i fogli senza tagliare il disegno. L'anteprima mostra il singolo foglio con riga e colonna nella griglia; con il poster sono disattivate le pagine per foglio e la scala (la pagina e' adattata all'intero poster).
 - **Intervallo personalizzato**: si possono ripetere le pagine, per esempio `1,1` (pagina 1 due volte, utile con 2 su 1), `2x3` (pagina 2 tre volte) o `1-3x2` (ogni pagina due volte).
 - **Schede**: la barra di scorrimento compare sotto le schede solo quando sono troppe.
 
@@ -44,7 +45,7 @@ https://github.com/gsepp86/Pdf-Reader-CP
 - **STAMPA TUTTO**: chiede sempre "STAMPARE CON LE IMPOSTAZIONI ATTUALI?" con il riepilogo (schede, pagine, fogli, copie, totale fogli, stampante, colore) e tre pulsanti: **STAMPA**, **CAMBIA** (apre le impostazioni di stampa: con **STAMPA TUTTO** stampa tutte le schede con le nuove impostazioni) e **ANNULLA**. Se sono impostate piu' copie compare anche **1 COPIA PER FILE**.
 - **Cambio pagina scorrendo**: con la rotella, il touchpad o lo strumento mano, arrivati in fondo alla pagina si continua sulla successiva (e in alto sulla precedente), senza cliccare i pulsanti.
 - **Schede tante**: quando non entrano nella barra compaiono piccoli numeri 1, 2, 3... sotto ogni scheda.
-- **Finestra di stampa**: la colonna delle impostazioni (compreso il cursore Scuro-Chiaro in "Colore e luminosita'") usa piu' altezza e ha una barra di scorrimento visibile se serve.
+- **Finestra di stampa**: la colonna delle impostazioni (compreso il cursore Scuro-Chiaro in "Colore e luminosita'") usa piu' altezza e ha una barra di scorrimento visibile se serve. La finestra **Stampa** (e **STAMPA TUTTO**) si puo' spostare trascinandola per la barra del titolo, cosi' si vede il PDF che sta sotto.
 - **Stampa in background**: durante l'invio di molti file compare in basso a destra un cerchio di caricamento con l'avanzamento (fogli e schede) e il pulsante Annulla; sparisce quando il lavoro e' in coda nella stampante.
 - **Schede spostabili**: trascina una scheda per cambiarne la posizione; STAMPA TUTTO stampa le schede nell'ordine in cui sono disposte.
 - **Contorno grigio scuro** attorno alla finestra.
