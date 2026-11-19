@@ -88,6 +88,34 @@ fn read_options(printer: &str) -> Vec<Opt> {
     list
 }
 
+/// Preferenze attuali del driver per la stampa (colore, copie, pagine per foglio):
+/// servono ad allineare le scelte della finestra di stampa a come e' impostata la stampante.
+#[derive(Default)]
+pub struct Defaults {
+    /// Some(true) = stampa in bianco e nero/scala di grigi, Some(false) = a colori.
+    pub color: Option<bool>,
+    pub copies: Option<u32>,
+    pub nup: Option<u32>,
+}
+
+pub fn defaults(printer: &str) -> Defaults {
+    let m = queue_defaults(printer);
+    let get = |k: &str| m.iter().find(|(a, _)| a.eq_ignore_ascii_case(k)).map(|(_, v)| v.to_ascii_lowercase());
+    let mut d = Defaults::default();
+    if let Some(v) = get("print-color-mode") {
+        if v.contains("mono") || v.contains("gray") { d.color = Some(true); }
+        else if v.contains("color") { d.color = Some(false); }
+    }
+    if d.color.is_none() {
+        if let Some(v) = get("ColorModel") {
+            d.color = Some(matches!(v.as_str(), "gray" | "g" | "k" | "mono" | "monochrome"));
+        }
+    }
+    if let Some(v) = get("copies") { d.copies = v.parse::<u32>().ok().filter(|c| *c > 0); }
+    if let Some(v) = get("number-up") { d.nup = v.parse::<u32>().ok(); }
+    d
+}
+
 /// Valori attivi della coda (`lpoptions -d stampante`).
 fn queue_defaults(printer: &str) -> HashMap<String, String> {
     let mut m = HashMap::new();

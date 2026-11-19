@@ -1,11 +1,11 @@
-# PDF Reader CP 2.6
+# PDF Reader CP 3.0
 Programma opensource progettato da Peppe CP con l'aiuto della IA.
 
 Lettore PDF a schede in Rust (egui + PDFium): una sola barra in alto con schede e comandi di stampa, documento a tutto schermo.
 
 ## Creare l'installer per Windows
 **Metodo 1 - sul tuo PC (Windows 10/11 x64):** installa Rust (https://rustup.rs), poi doppio clic su `build.bat`.
-Scarica da solo pdfium.dll e Inno Setup e produce `dist\PDFReaderCP_Setup_2.6.exe`.
+Scarica da solo pdfium.dll e Inno Setup e produce `dist\PDFReaderCP_Setup_3.0.exe`.
 
 **Metodo 2 - senza installare nulla:** carica la cartella su GitHub, poi Actions > "Crea installer" > Run workflow.
 L'installer si scarica dagli "Artifacts" a fine lavoro.
@@ -13,10 +13,11 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 ## Uso
 - Barra del titolo (una sola riga): **File** | schede (tutto lo spazio disponibile) | icone **Stampa…**, **Stampa subito**, **STAMPA TUTTO** | riduci / massimizza / chiudi.
 - Menu **File**: Apri, Chiudi scheda / tutte, Stampa…, Stampa subito, STAMPA TUTTO, Stampante, Pagine per foglio, Schermo intero, **Info**, Esci.
-- **Info**: mostra la versione (2.6) e il pulsante **Cerca la versione piu' recente**, che controlla le release su GitHub senza bloccare il programma e, se ce n'e' una nuova, offre il link alla pagina delle release.
+- **Info**: mostra la versione (3.0) e il pulsante **Cerca la versione piu' recente**, che controlla le release su GitHub senza bloccare il programma e, se ce n'e' una nuova, offre il link alla pagina delle release.
 - **Stampa…** (Ctrl+P): anteprima dettagliata (1, 2, 4, 6, 9, 16 pagine per foglio), copie, fascicola, intervallo, scala, rotazione, centratura. La finestra si sposta trascinando la barra del titolo.
 - **Stampa subito** (Ctrl+Maiusc+P): scheda corrente con le ultime impostazioni, senza anteprima.
-- **STAMPA TUTTO**: tutte le schede aperte, ognuna per intero, in sequenza, con un solo messaggio di conferma.
+- **STAMPA TUTTO / A GRUPPO**: finestra grande con l'elenco delle schede aperte; accanto a ogni file si scrivono le pagine da stampare (vuoto = tutte). In alto i totali: pagine totali da stampare, fogli per copia, copie e totale fogli. Due pulsanti: **STAMPA A GRUPPO** (un solo lavoro, con le pagine scelte impaginate insieme: la pagina 1 del file 1 e la pagina 3 del file 2 possono stare sullo stesso foglio, per esempio 2 su 1) e **STAMPA TUTTO** (ogni file resta un lavoro separato con tutte le sue pagine, come nella stampa standard, utile per la fascicolazione del driver). Il tasto si raggiunge dall'icona con le pagine impilate o da File > STAMPA TUTTO / A GRUPPO...
+- **Preferenze del driver**: scegliendo una stampante nella finestra Stampa, colore (per esempio bianco e nero se la stampante e' impostata cosi'), copie, pagine per foglio e carta vengono presi dalle preferenze attuali del driver/CUPS; le modifiche fatte a mano restano valide fino al cambio di stampante.
 - Molti PDF: Ctrl+Tab / Ctrl+Maiusc+Tab cambiano scheda, Ctrl+W la chiude, clic con la rotellina sulla scheda la chiude, rotellina del mouse sulla barra scorre le schede.
 - F11 schermo intero · frecce / PagSu / PagGiu cambiano pagina · Ctrl+rotellina zoom · trascina i PDF nella finestra.
 - **PDF protetti da password**: si aprono come gli altri; la finestra di dialogo della password compare **solo** quando il file e' davvero protetto, senza bloccare il programma. Se la password e' errata lo dice e si puo' correggere (Invio conferma, Esc annulla). I file aperti mentre la richiesta e' in corso vengono accodati.
@@ -31,7 +32,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 - **Fluidita'**: i PDF restano aperti in memoria; durante ridimensionamento e zoom la pagina non viene ridisegnata a ogni passo (si affina appena ti fermi); nell'anteprima di stampa il cursore chiaro/scuro e la scelta del colore non ricompongono il foglio.
 - **Strumenti** (accanto alle icone di stampa): **Seleziona testo** (T) e **Sposta la pagina con il mouse** (H, trascinando la pagina).
 - **Ricerca nel PDF**: campo "Cerca nel PDF" nella barra in basso (Ctrl+F). Invio = risultato successivo, Maiusc+Invio = precedente; i risultati sono evidenziati in giallo (quello corrente in arancione) e la ricerca passa da una pagina all'altra.
-- **STAMPA TUTTO**: se sono impostate piu' copie, avvisa (in stampatello) con totale di fogli e chiede se correggere a 1 copia per file (Si), mantenere le impostazioni (No) o annullare.
+- **STAMPA TUTTO / A GRUPPO**: se sono impostate piu' copie avvisa in stampatello; i pulsanti **1 COPIA** (corregge e stampa), **CAMBIA IMPOSTAZIONI** (colore, N su 1, stampante, driver, poster) e **ANNULLA** sono nella stessa finestra.
 - **Finestra**: si sposta trascinando qualsiasi spazio libero della barra in alto (anche tra le schede e accanto all'icona); doppio clic sulla barra = ingrandisci/ripristina. Le stampanti sono elencate in ordine alfabetico.
 - **Impostazioni** (File > Impostazioni..., Ctrl+,): finestra con due sezioni, Generale (apri sempre in secondo piano, avvia ingrandita, strumento e vista iniziali) e Stampa (stampante, copie, pagine per foglio, colore, conferma con piu' copie). Si salvano con "Salva" nel file settings.json.
 - **In secondo piano**: con l'opzione attiva (anche da File > Apri sempre in secondo piano) la finestra parte senza prendere il focus e i PDF aperti da un secondo avvio si aggiungono come schede senza portarla davanti.
@@ -44,7 +45,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 [![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?logo=paypal)](https://paypal.me/PeppeCP)
 
 https://github.com/gsepp86/Pdf-Reader-CP
-- **STAMPA TUTTO**: chiede sempre "STAMPARE CON LE IMPOSTAZIONI ATTUALI?" con il riepilogo (schede, pagine, fogli, copie, totale fogli, stampante, colore) e tre pulsanti: **STAMPA**, **CAMBIA** (apre le impostazioni di stampa: con **STAMPA TUTTO** stampa tutte le schede con le nuove impostazioni) e **ANNULLA**. Se sono impostate piu' copie compare anche **1 COPIA PER FILE**.
+- **STAMPA TUTTO / A GRUPPO**: riepilogo sempre visibile (schede, pagine in totale, pagine scelte per ogni file, fogli per copia, copie, totale fogli, stampante, colore) e pagine modificabili file per file nella stessa finestra.
 - **Cambio pagina scorrendo**: con la rotella, il touchpad o lo strumento mano, arrivati in fondo alla pagina si continua sulla successiva (e in alto sulla precedente), senza cliccare i pulsanti.
 - **Schede tante**: quando non entrano nella barra compaiono piccoli numeri 1, 2, 3... sotto ogni scheda.
 - **Finestra di stampa**: la colonna delle impostazioni (compreso il cursore Scuro-Chiaro in "Colore e luminosita'") usa piu' altezza e ha una barra di scorrimento visibile se serve. La finestra **Stampa** (e **STAMPA TUTTO**) si puo' spostare trascinandola per la barra del titolo, cosi' si vede il PDF che sta sotto.

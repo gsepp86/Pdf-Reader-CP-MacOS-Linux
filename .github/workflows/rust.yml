@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
   push:
     # un push su main fa partire la build (artifact); la release viene creata
-    # solo quando il push e' un tag v*.
-    branches: [main]
+    # quando il push e' un tag v* oppure un ramo release/v* (es. release/v3.0.0),
+    # cosi' si puo' pubblicare anche senza poter spingere un tag da locale.
+    branches: [main, "release/v*"]
     tags: ["v*"]
 
 permissions:
@@ -95,7 +96,7 @@ jobs:
   release:
     name: Pubblica la release
     needs: [linux, macos]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release/v')
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
@@ -108,8 +109,22 @@ jobs:
           test -n "$(ls -A dist)" || { echo "nessun asset scaricato dagli altri job"; exit 1; }
           ls -l dist
 
+      # tag v3.0.0 dal tag oppure dal ramo release/v3.0.0: la release ha sempre un nome di tag
+      - name: Versione della release
+        id: ver
+        run: |
+          if [ "${GITHUB_REF}" = "refs/tags/${GITHUB_REF#refs/tags/}" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${GITHUB_REF_NAME#release/}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release: $TAG"
+
       - name: Allega alla Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: PDF Reader CP ${{ steps.ver.outputs.tag }}
           files: dist/*
           fail_on_unmatched_files: true

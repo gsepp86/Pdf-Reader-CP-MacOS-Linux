@@ -1,6 +1,6 @@
 # PDF Reader CP per macOS e Linux
 
-Port della versione Windows 2.6: stesso programma (egui + PDFium), stesso look, con stampa
+Port della versione Windows 3.0: stesso programma (egui + PDFium), stesso look, con stampa
 funzionante su macOS e Linux.
 
 ## Cosa cambia rispetto a Windows
@@ -51,8 +51,8 @@ finestra lo dice all'inizio del lavoro invece di fallire in silenzio.
 
 Lo script scarica PDFium da `bblanchon/pdfium-binaries`, compila in release e crea:
 
-- Linux: `dist/PDFReaderCP_2.6.0_amd64.deb` e `dist/PDFReaderCP-2.6.0-linux-x64.tar.gz`
-- macOS: `dist/PDFReaderCP-2.6.0-macos-universal.zip` (contiene `PDFReaderCP.app`)
+- Linux: `dist/PDFReaderCP_3.0.0_amd64.deb` e `dist/PDFReaderCP-3.0.0-linux-x64.tar.gz`
+- macOS: `dist/PDFReaderCP-3.0.0-macos-universal.zip` (contiene `PDFReaderCP.app`)
 
 Dipendenze per compilare su Linux:
 
@@ -74,7 +74,7 @@ firmato solo ad-hoc (nessun certificato Apple): al primo avvio fai clic destro s
 **Linux (.deb)**
 
 ```bash
-sudo dpkg -i PDFReaderCP_2.6.0_amd64.deb
+sudo dpkg -i PDFReaderCP_3.0.0_amd64.deb
 sudo apt -f install   # solo se mancano dipendenze
 ```
 
