@@ -23,6 +23,9 @@ for a in "$@"; do
 done
 
 VERSION="$(sed -n 's/^version *= *"\(.*\)".*/\1/p' Cargo.toml | head -1)"
+# versione usata nei pacchetti senza lo zero finale: 3.1.0 -> 3.1 (Cargo nel manifest
+# richiede tutti e tre i numeri, ma il programma e le release si chiamano 3.1)
+case "$VERSION" in *.*.0) VERSION="${VERSION%.0}" ;; esac
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 LIB=""; ASSET=""; TAG=""; DEB_ARCH=""

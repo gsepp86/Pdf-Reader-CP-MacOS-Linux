@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 const ACCENT: Color32 = Color32::from_rgb(198, 47, 47);
 const BAR: Color32 = Color32::from_rgb(229, 231, 235);
+const BAR_LIT: Color32 = Color32::from_rgb(252, 240, 214); // barra "illuminata" per 2 s dopo un clic
 const A4: (f32, f32) = (595.0, 842.0); // punti (1/72")
 const ICON: &[u8] = include_bytes!("../assets/icon.png");
 const DONATE_URL: &str = "https://paypal.me/PeppeCP";
@@ -451,9 +452,16 @@ fn latest_release() -> (String, String) {
                 else { "Nessuna release pubblicata su GitHub" };
         return (m.into(), String::new())
     }
-    let cur = env!("CARGO_PKG_VERSION");
+    let cur = app_version();
     if version_newer(&tag, cur) { (format!("Nuova versione disponibile: {tag} (questa e' {cur})"), page) }
     else { (format!("Hai gia' la versione piu' recente ({cur})"), page) }
+}
+
+/// Versione mostrata all'utente (3.1): Cargo nel manifest vuole anche il numero di patch,
+/// ma qui si toglie lo zero finale.
+fn app_version() -> &'static str {
+    let v: &'static str = env!("CARGO_PKG_VERSION");
+    v.strip_suffix(".0").unwrap_or(v)
 }
 
 fn version_newer(a: &str, b: &str) -> bool {
@@ -649,6 +657,7 @@ struct App {
     show_pall: bool, pa_mode: bool, pall_spec: Vec<(u64, String)>, drv_seen: String, gjob: Option<GroupJob>,
     over_acc: f32, over_at: Instant, edge: (bool, bool), scroll_reset: Option<bool>, tabs_overflow: bool,
     task: Option<PrintTask>, tab_drag: Option<usize>, next_id: u64,
+    bar_hide: Instant, bar_lit: Instant, // barra a scomparsa su macOS: quando ritirarla e quando e' evidenziata
 }
 
 impl App {
@@ -676,7 +685,7 @@ impl App {
         detect_byte_order(pdfium);
         let start_pan = st.start_pan;
         let ipc = listener.map(|l| { let (tx, rx) = std::sync::mpsc::channel(); serve(l, tx, cc.egui_ctx.clone()); rx });
-        let mut app = App { pdfium, docs: vec![], tab: Tab::Home, draft: st.clone(), st, printers, show_print: false, prev: 0, pv: None, msg: String::new(), msg_at: None, logo, fs: false, show_info: false, scroll_tab: false, ipc, started: false, sel: None, paper: A4, paper_key: (String::new(), String::new()), pv_raw: None, pv_gen: 0, last_size: (0, 0), last_change: Instant::now(), pan: start_pan, search: String::new(), search_hit: None, search_focus: false, jump: false, show_cfg: false, cfg: Settings::default(), cfg_tab: 0, show_pall: false, pa_mode: false, pall_spec: Vec::new(), drv_seen: String::new(), gjob: None, over_acc: 0.0, over_at: Instant::now(), edge: (true, false), scroll_reset: None, tabs_overflow: false, task: None, tab_drag: None, next_id: 1, upd: None, upd_msg: String::new(), upd_url: String::new(), pwd: None };
+        let mut app = App { pdfium, docs: vec![], tab: Tab::Home, draft: st.clone(), st, printers, show_print: false, prev: 0, pv: None, msg: String::new(), msg_at: None, logo, fs: false, show_info: false, scroll_tab: false, ipc, started: false, sel: None, paper: A4, paper_key: (String::new(), String::new()), pv_raw: None, pv_gen: 0, last_size: (0, 0), last_change: Instant::now(), pan: start_pan, search: String::new(), search_hit: None, search_focus: false, jump: false, show_cfg: false, cfg: Settings::default(), cfg_tab: 0, show_pall: false, pa_mode: false, pall_spec: Vec::new(), drv_seen: String::new(), gjob: None, over_acc: 0.0, over_at: Instant::now(), edge: (true, false), scroll_reset: None, tabs_overflow: false, task: None, tab_drag: None, next_id: 1, bar_hide: Instant::now() + Duration::from_secs(3), bar_lit: Instant::now(), upd: None, upd_msg: String::new(), upd_url: String::new(), pwd: None };
         for a in init { app.open(a); }
         app
     }
@@ -1723,12 +1732,27 @@ impl eframe::App for App {
         // perche' contiene anche i pulsanti della finestra.
         let macos = cfg!(target_os = "macos");
         let bar_h = if self.tabs_overflow { 52.0 } else { 38.0 };
-        let bar_visible = !macos || self.st.tabs_pin || self.docs.is_empty() || self.tab_drag.is_some()
-            || ctx.pointer_latest_pos().map_or(false, |p| p.y <= ctx.screen_rect().top() + bar_h + 2.0);
+        // la barra non sparisce appena il mouse se ne va: resta 3 secondi, e se ci si clicca
+        // sopra (File, stampa, schede) resta 2 secondi in piu' ed evidenziata
+        let hot = ctx.pointer_latest_pos().map_or(false, |p| p.y <= ctx.screen_rect().top() + bar_h + 2.0);
+        let now = Instant::now();
+        let was_visible = !macos || self.st.tabs_pin || self.docs.is_empty() || self.tab_drag.is_some()
+            || hot || now < self.bar_hide;
+        // menu di File aperto: la barra non si ritira mentre lo si usa
+        let popup = macos && was_visible && ctx.memory(|m| m.any_popup_open());
+        if macos && !self.st.tabs_pin && (hot || self.tab_drag.is_some() || popup) {
+            self.bar_hide = now + Duration::from_secs(3);
+        }
+        if macos && !self.st.tabs_pin && hot && ctx.input(|i| i.pointer.any_click()) {
+            self.bar_hide = self.bar_hide.max(now + Duration::from_secs(2));
+            self.bar_lit = now + Duration::from_secs(2);
+        }
+        let bar_lit = macos && now < self.bar_lit;
+        let bar_visible = was_visible;
         if bar_visible {
         egui::TopBottomPanel::top("top")
             .exact_height(if self.tabs_overflow { 52.0 } else { 38.0 })
-            .frame(egui::Frame::none().fill(BAR).inner_margin(egui::Margin::symmetric(6.0, 3.0)))
+            .frame(egui::Frame::none().fill(if bar_lit { BAR_LIT } else { BAR }).inner_margin(egui::Margin::symmetric(6.0, 3.0)))
             .show(ctx, |ui| {
                 // tutta la barra e' una maniglia: trascinando negli spazi liberi si sposta la finestra; doppio clic = ingrandisci/ripristina
                 let bar = ui.interact(ui.max_rect(), egui::Id::new("titlebar_drag"), egui::Sense::click_and_drag());
@@ -2083,7 +2107,7 @@ impl eframe::App for App {
                     ui.image(egui::load::SizedTexture::new(self.logo.id(), Vec2::splat(72.0)));
                     ui.heading("PDF Reader CP");
                     ui.label("Programma opensource progettato da Peppe CP con l'aiuto della IA.");
-                    ui.label(RichText::new(format!("Versione {}", env!("CARGO_PKG_VERSION"))).weak());
+                    ui.label(RichText::new(format!("Versione {}", app_version())).weak());
                     ui.add_space(8.0);
                     ui.separator();
                     ui.scope(|ui| {
@@ -2113,6 +2137,12 @@ impl eframe::App for App {
         }
         #[cfg(all(unix, not(target_os = "macos")))]
         resize_grips(ctx); // senza cornice di sistema: bordi e angoli ridimensionano la finestra
+        // su macOS la finestra ha la barra del titolo nativa, quindi il ridimensionamento e' quello di sistema
+        if macos && !self.st.tabs_pin && !self.docs.is_empty() {
+            // senza input la barra deve ritirarsi da sola: sveglia l'interfaccia allo scadere del tempo
+            let till = self.bar_hide.max(self.bar_lit).saturating_duration_since(Instant::now());
+            if till > Duration::ZERO { ctx.request_repaint_after(till.min(Duration::from_millis(200))); }
+        }
         // contorno nero attorno alla finestra (la finestra non ha la cornice di Windows)
         #[cfg(not(target_os = "macos"))]
         ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("window_outline")))
@@ -2181,8 +2211,10 @@ fn main() -> eframe::Result<()> {
     let icon = eframe::icon_data::from_png_bytes(ICON).expect("icona");
     #[allow(unused_mut)] // `vp` si riassegna solo su macOS/Linux (app_id)
     let mut vp = egui::ViewportBuilder::default().with_inner_size([1200.0, 760.0]).with_min_inner_size([800.0, 500.0]).with_maximized(cfg0.start_max).with_active(!cfg0.background)
-        // su macOS si usano la barra del titolo e i pulsanti nativi della finestra (traffic lights)
-        .with_decorations(!cfg!(target_os = "macos"))
+        // su macOS si usano la barra del titolo e i pulsanti nativi della finestra (traffic lights:
+        // chiudi, riduci a icona, ingrandisci/ridimensiona); sulle altre piattaforme la cornice
+        // e' disegnata dal programma
+        .with_decorations(cfg!(target_os = "macos"))
         .with_icon(icon).with_title("PDF Reader CP");
     #[cfg(unix)]
     {
