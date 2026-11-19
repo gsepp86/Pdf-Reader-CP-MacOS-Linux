@@ -35,7 +35,14 @@ enum PageSel { All, Current, Custom }
 enum ScaleMode { Fit, Actual, Custom }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
-enum ColorMode { Color, Gray, Bw }
+enum ColorMode {
+    Color, // colori come nel PDF
+    Auto,  // decide la stampante / il driver (nessuna conversione)
+    /// Bianco e nero: in pratica una stampa in scala di grigi (molti driver non offrono
+    /// la voce "scala di grigi", quindi la conversione la fa il programma).
+    #[serde(alias = "Bw")] // impostazioni salvate dalle versioni precedenti
+    Gray,
+}
 
 /// Impostazioni di stampa all'avvio: ultime usate oppure quelle scelte dall'utente.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
@@ -44,22 +51,22 @@ enum StartMode { Last, Mine }
 /// "Le mie impostazioni predefinite" di stampa (stampante, copie, colore e funzioni del driver, es. fronte/retro).
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-struct PrintPrefs { printer: String, copies: u32, color: ColorMode, bright: i32, drv_printer: String, drv_mode: String }
+struct PrintPrefs { printer: String, copies: u32, color: ColorMode, bright: i32, contrast: i32, drv_printer: String, drv_mode: String }
 impl Default for PrintPrefs {
-    fn default() -> Self { Self { printer: String::new(), copies: 1, color: ColorMode::Color, bright: 0, drv_printer: String::new(), drv_mode: String::new() } }
+    fn default() -> Self { Self { printer: String::new(), copies: 1, color: ColorMode::Color, bright: 0, contrast: 0, drv_printer: String::new(), drv_mode: String::new() } }
 }
 impl PrintPrefs {
     fn from_settings(st: &Settings) -> Self {
-        Self { printer: st.printer.clone(), copies: st.copies, color: st.color, bright: st.bright, drv_printer: st.drv_printer.clone(), drv_mode: st.drv_mode.clone() }
+        Self { printer: st.printer.clone(), copies: st.copies, color: st.color, bright: st.bright, contrast: st.contrast, drv_printer: st.drv_printer.clone(), drv_mode: st.drv_mode.clone() }
     }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-struct Settings { printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, poster: bool, poster_cols: u32, poster_rows: u32, poster_ov: f32, mine: PrintPrefs, tabs_pin: bool, thumbs: bool }
+struct Settings { printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, contrast: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, poster: bool, poster_cols: u32, poster_rows: u32, poster_ov: f32, mine: PrintPrefs, tabs_pin: bool, thumbs: bool }
 impl Default for Settings {
     fn default() -> Self {
-        Self { printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, poster: false, poster_cols: 2, poster_rows: 2, poster_ov: 5.0, mine: PrintPrefs::default(), tabs_pin: false, thumbs: false }
+        Self { printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, contrast: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, poster: false, poster_cols: 2, poster_rows: 2, poster_ov: 5.0, mine: PrintPrefs::default(), tabs_pin: false, thumbs: false }
     }
 }
 impl Settings {
@@ -72,6 +79,7 @@ impl Settings {
             self.copies = m.copies.max(1);
             self.color = m.color;
             self.bright = m.bright;
+            self.contrast = m.contrast;
             self.drv_printer = m.drv_printer;
             self.drv_mode = m.drv_mode;
         } else {
@@ -410,17 +418,25 @@ fn hit(chars: &[TCh], x: f32, y: f32) -> Option<usize> {
     best.map(|(i, _)| i)
 }
 
-/// Colore / scala di grigi / bianco e nero e chiaro-scuro (curva gamma: il bianco della carta resta bianco).
+/// Colore / automatico / bianco e nero (in pratica scala di grigi), con chiaro-scuro e contrasto:
+/// il bianco della carta resta bianco.
 fn tone(buf: &mut [u8], st: &Settings) {
-    if st.color == ColorMode::Color && st.bright == 0 { return; }
+    let mono = st.color == ColorMode::Gray;
+    if !mono && st.bright == 0 && st.contrast == 0 { return; }
     let g = 2f32.powf(-(st.bright as f32) / 50.0); // >0 = piu' chiaro, <0 = piu' scuro
-    let lut: Vec<u8> = (0..256).map(|v| (255.0 * (v as f32 / 255.0).powf(g)).round().clamp(0.0, 255.0) as u8).collect();
+    let k = 1.0 + st.contrast as f32 / 100.0; // -100 = grigio piatto, +100 = contrasto doppio
+    let lut: Vec<u8> = (0..256).map(|v| {
+        let mut x = (v as f32 / 255.0).powf(g);
+        if st.contrast != 0 { x = ((x - 0.5) * k + 0.5).clamp(0.0, 1.0); } // contrasto intorno al grigio medio
+        (255.0 * x).round().clamp(0.0, 255.0) as u8
+    }).collect();
     for p in buf.chunks_exact_mut(4) {
-        let lum = ((0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32) as usize).min(255);
-        match st.color {
-            ColorMode::Color => { p[0] = lut[p[0] as usize]; p[1] = lut[p[1] as usize]; p[2] = lut[p[2] as usize]; }
-            ColorMode::Gray => { let l = lut[lum]; p[0] = l; p[1] = l; p[2] = l; }
-            ColorMode::Bw => { let v = if lut[lum] >= 128 { 255 } else { 0 }; p[0] = v; p[1] = v; p[2] = v; }
+        if mono {
+            let lum = ((0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32) as usize).min(255);
+            let l = lut[lum];
+            p[0] = l; p[1] = l; p[2] = l;
+        } else {
+            p[0] = lut[p[0] as usize]; p[1] = lut[p[1] as usize]; p[2] = lut[p[2] as usize];
         }
     }
 }
@@ -623,7 +639,7 @@ mod spool;
 struct Doc { id: u64, pdf: PdfDocument<'static>, path: PathBuf, name: String, sizes: Vec<(f32, f32)>, cur: usize, zoom: f32, fitpage: bool, tex: HashMap<(usize, i32), egui::TextureHandle>, text: HashMap<usize, Vec<TCh>>, ptext: HashMap<usize, Vec<char>>, thumbs: HashMap<usize, egui::TextureHandle> }
 #[derive(PartialEq, Clone, Copy)]
 enum Tab { Home, Doc(usize) }
-type PvKey = (u64, ColorMode, i32); // versione del foglio + colore + chiaro/scuro
+type PvKey = (u64, ColorMode, i32, i32); // versione del foglio + colore + chiaro/scuro + contrasto
 type RawKey = (usize, usize, PageSel, String, u32, bool, ScaleMode, u32, bool, bool, (i32, i32), (bool, (u32, u32), f32));
 /// Carattere del testo di una pagina: unicode + riquadro [sinistra, basso, destra, alto] in punti PDF.
 struct TCh { c: char, r: [f32; 4] }
@@ -895,7 +911,7 @@ impl App {
         if p.is_empty() { return; }
         if self.draft.drv_printer != p { self.draft.drv_mode.clear(); self.draft.drv_printer = p.clone(); }
         let d = spool::defaults(&p);
-        if let Some(mono) = d.color { self.draft.color = if mono { ColorMode::Bw } else { ColorMode::Color }; }
+        if let Some(mono) = d.color { self.draft.color = if mono { ColorMode::Gray } else { ColorMode::Color }; }
         if let Some(c) = d.copies { self.draft.copies = c.clamp(1, 99); }
         if let Some(n) = d.nup { if NUPS.contains(&n) { self.draft.nup = n; } }
         self.paper_key = (String::new(), String::new()); // la carta si rilegge dal driver
@@ -1077,7 +1093,8 @@ impl App {
         let nup = st.nup.max(1) as usize;
         let totale_file: usize = self.docs.iter().map(|d| d.sizes.len()).sum();
         let warn = c > 1 && st.ask_copies;
-        let colore = match st.color { ColorMode::Color => "COLORI", ColorMode::Gray => "SCALA DI GRIGI", ColorMode::Bw => "BIANCO E NERO" };
+        let colore = match st.color { ColorMode::Color => "COLORI", ColorMode::Auto => "AUTOMATICO", ColorMode::Gray => "BIANCO E NERO (SCALA DI GRIGI)" };
+        let contrasto = if st.contrast == 0 { String::new() } else { format!(" · CONTRASTO {:+}", st.contrast) };
         let stampante = if st.printer.is_empty() { "(nessuna)".to_string() } else { st.printer.clone() };
         let pp = ctx.screen_rect().center() - Vec2::new(400.0, 350.0);
         egui::Window::new("STAMPA TUTTO / A GRUPPO").open(&mut open).collapsible(false).resizable(true).movable(true)
@@ -1096,7 +1113,7 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(format!("STAMPANTE: {}", stampante.to_uppercase())).strong());
                     ui.separator();
-                    ui.label(format!("COLORE: {colore}"));
+                    ui.label(format!("COLORE: {colore}{contrasto}"));
                     ui.separator();
                     ui.label(format!("COPIE: {c}"));
                     ui.separator();
@@ -1244,8 +1261,8 @@ impl App {
                         ui.horizontal(|ui| {
                             ui.label("Colore:");
                             ui.radio_value(&mut self.cfg.mine.color, ColorMode::Color, "Colori");
-                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Gray, "Scala di grigi");
-                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Bw, "Bianco e nero");
+                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Auto, "Automatico");
+                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Gray, "Bianco e nero");
                         });
                         #[cfg(windows)]
                         ui.horizontal(|ui| {
@@ -1324,7 +1341,7 @@ impl App {
                 })
                 .map(|(w, h, b)| (rk, w, h, b));
         }
-        let tk: PvKey = (self.pv_gen, self.draft.color, self.draft.bright);
+        let tk: PvKey = (self.pv_gen, self.draft.color, self.draft.bright, self.draft.contrast);
         if self.pv.as_ref().map(|p| &p.0) != Some(&tk) {
             self.pv = self.pv_raw.as_ref().map(|(_, w, h, b)| {
                 let mut t = b.clone();
@@ -1448,15 +1465,22 @@ impl App {
                         ui.group(|ui| {
                             ui.label(RichText::new("Colore e luminosità").strong().color(ACCENT));
                             ui.horizontal(|ui| {
-                                ui.radio_value(&mut self.draft.color, ColorMode::Color, "Colori");
-                                ui.radio_value(&mut self.draft.color, ColorMode::Gray, "Scala di grigi");
-                                ui.radio_value(&mut self.draft.color, ColorMode::Bw, "Bianco e nero");
+                                                            ui.radio_value(&mut self.draft.color, ColorMode::Color, "Colori");
+                            ui.radio_value(&mut self.draft.color, ColorMode::Auto, "Automatico");
+                            ui.radio_value(&mut self.draft.color, ColorMode::Gray, "Bianco e nero");
                             });
+                            ui.label(RichText::new("Automatico: decide la stampante. Bianco e nero: il foglio viene convertito in scala di grigi.").weak().small());
                             ui.horizontal(|ui| {
                                 ui.label("Scuro");
                                 ui.add(egui::Slider::new(&mut self.draft.bright, -100..=100).show_value(false));
                                 ui.label("Chiaro");
                                 if ui.add(Button::new("0").min_size(Vec2::new(36.0, 30.0))).on_hover_text("Azzera chiaro/scuro").clicked() { self.draft.bright = 0; }
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Contrasto");
+                                ui.add(egui::Slider::new(&mut self.draft.contrast, -100..=100).show_value(false));
+                                if ui.add(Button::new("0").min_size(Vec2::new(36.0, 30.0))).on_hover_text("Azzera il contrasto").clicked() { self.draft.contrast = 0; }
+                                ui.label(RichText::new("Basso ─ Alto").weak().small());
                             });
                         });
                         ui.label(RichText::new("Le impostazioni vengono ricordate per «Stampa subito».").weak());

@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub struct Job {
-    printer: String,
+    dest: String, // nome della coda CUPS (non il nome "amichevole" mostrato nell'interfaccia)
     name: String,
     dir: PathBuf,
     paper: (f32, f32),
@@ -37,6 +37,24 @@ pub struct Opt {
 
 thread_local! {
     static CACHE: RefCell<(String, Vec<Opt>)> = RefCell::new((String::new(), Vec::new()));
+    static DEST: RefCell<Option<Vec<(String, String)>>> = RefCell::new(None); // (nome mostrato, nome coda)
+}
+
+/// Nome della coda CUPS. L'interfaccia mostra il nome "amichevole" del driver
+/// (es. «SHARP MX-3060N (6504934500)»), ma `lp`, `lpstat` e `lpoptions` accettano solo il
+/// nome della coda («SHARP_MX-3060N»): senza questa conversione lpstat risponde
+/// «Invalid destination name in list» e la stampa non parte.
+fn dest(printer: &str) -> String {
+    let p = printer.trim();
+    if p.is_empty() { return String::new(); }
+    DEST.with(|c| {
+        if c.borrow().is_none() {
+            *c.borrow_mut() = Some(printers::get_printers().into_iter().map(|x| (x.name, x.system_name)).collect());
+        }
+        c.borrow().as_ref()
+            .and_then(|l| l.iter().find(|(n, _)| n == p).map(|(_, s)| s.clone()))
+            .unwrap_or_else(|| p.to_string())
+    })
 }
 
 /// Opzioni della coda (lette una volta per stampante: `lpoptions -d stampante -l`).
@@ -55,7 +73,8 @@ pub fn options(printer: &str) -> Vec<Opt> {
 }
 
 fn read_options(printer: &str) -> Vec<Opt> {
-    let Ok(out) = Command::new("lpoptions").args(["-d", printer, "-l"]).output() else {
+    let dest = dest(printer);
+    let Ok(out) = Command::new("lpoptions").args(["-d", dest.as_str(), "-l"]).output() else {
         return Vec::new();
     };
     if !out.status.success() {
@@ -119,7 +138,8 @@ pub fn defaults(printer: &str) -> Defaults {
 /// Valori attivi della coda (`lpoptions -d stampante`).
 fn queue_defaults(printer: &str) -> HashMap<String, String> {
     let mut m = HashMap::new();
-    if let Ok(out) = Command::new("lpoptions").args(["-d", printer]).output() {
+    let dest = dest(printer);
+    if let Ok(out) = Command::new("lpoptions").args(["-d", dest.as_str()]).output() {
         for w in String::from_utf8_lossy(&out.stdout).split_whitespace() {
             if let Some((k, v)) = w.split_once('=') {
                 m.insert(k.to_string(), v.to_string());
@@ -146,7 +166,8 @@ pub fn paper_pts(printer: &str, devmode: Option<&[u8]>) -> Option<(f32, f32)> {
     if let Some((_, v)) = saved(devmode).into_iter().find(|(k, _)| k == "PageSize") {
         return Some(media_pts(&v));
     }
-    let out = Command::new("lpoptions").args(["-d", printer]).output().ok()?;
+    let dest = dest(printer);
+    let out = Command::new("lpoptions").args(["-d", dest.as_str()]).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -208,7 +229,8 @@ impl Job {
             return Err("Nessuna stampante selezionata".into());
         }
         // CUPS presente? La stampante esiste ed e' abilitata?
-        let st = Command::new("lpstat").args(["-p", printer]).output().map_err(|_| {
+        let dest = dest(printer);
+        let st = Command::new("lpstat").args(["-p", dest.as_str()]).output().map_err(|_| {
             "Comandi di stampa non trovati: installa CUPS (Linux: pacchetto cups-client)".to_string()
         })?;
         if !st.status.success() {
@@ -222,7 +244,7 @@ impl Job {
         let dir = std::env::temp_dir().join(format!("pdfreadercp-{}-{}", std::process::id(), unique()));
         std::fs::create_dir_all(&dir).map_err(|e| format!("Cartella temporanea non creabile: {e}"))?;
         Ok(Job {
-            printer: printer.to_string(),
+            dest,
             name: name.to_string(),
             dir,
             paper: paper_pts(printer, devmode).unwrap_or((595.0, 842.0)),
@@ -273,7 +295,7 @@ impl Drop for Job {
         if !self.aborted && !sheets.is_empty() {
             let name = if self.name.is_empty() { "PDF Reader CP".to_string() } else { self.name.clone() };
             let mut cmd = Command::new("lp");
-            cmd.arg("-d").arg(&self.printer).arg("-t").arg(name);
+            cmd.arg("-d").arg(&self.dest).arg("-t").arg(name);
             cmd.arg("-o").arg("fit-to-page"); // il foglio (gia' impaginato) riempie la carta
             cmd.arg("-o").arg("copies=1"); // le copie sono gia' nell'ordine dei fogli
             for (k, v) in &self.opts {
