@@ -52,7 +52,7 @@ finestra lo dice all'inizio del lavoro invece di fallire in silenzio.
 Lo script scarica PDFium da `bblanchon/pdfium-binaries`, compila in release e crea:
 
 - Linux: `dist/PDFReaderCP_3.0.0_amd64.deb` e `dist/PDFReaderCP-3.0.0-linux-x64.tar.gz`
-- macOS: `dist/PDFReaderCP-3.0.0-macos-universal.zip` (contiene `PDFReaderCP.app`)
+- macOS: `dist/PDFReaderCP-3.0.0-macos-universal.dmg` (installer), `dist/PDFReaderCP-3.0.0-macos-universal.pkg` (installer) e `dist/PDFReaderCP-3.0.0-macos-universal.zip` (app da scompattare)
 
 Dipendenze per compilare su Linux:
 
@@ -67,9 +67,17 @@ sui sistemi con CUPS.
 
 ## Installare
 
-**macOS** — scompatta lo zip e trascina `PDFReaderCP.app` in *Applicazioni*. Il pacchetto e'
-firmato solo ad-hoc (nessun certificato Apple): al primo avvio fai clic destro sull'app >
-*Apri*, oppure esegui `xattr -dr com.apple.quarantine /Applications/PDFReaderCP.app`.
+**macOS (.dmg)** — apri `PDFReaderCP-3.0.0-macos-universal.dmg` e trascina `PDFReaderCP`
+nel collegamento *Applications* (Applicazioni); poi espelli l'immagine.
+
+**macOS (.pkg)** — doppio clic su `PDFReaderCP-3.0.0-macos-universal.pkg` e segui
+l'installazione: l'app finisce in *Applicazioni*.
+
+**macOS (.zip)** — in alternativa, scompatta lo zip e sposta `PDFReaderCP.app` in *Applicazioni*.
+
+Gli installer sono firmati solo ad-hoc (nessun certificato Apple): al primo avvio fai clic
+destro sull'app > *Apri*, oppure esegui
+`xattr -dr com.apple.quarantine /Applications/PDFReaderCP.app`.
 
 **Linux (.deb)**
 

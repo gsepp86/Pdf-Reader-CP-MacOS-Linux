@@ -83,6 +83,19 @@ jobs:
           lipo -archs "$APP/Contents/MacOS/libpdfium.dylib"
           plutil -lint "$APP/Contents/Info.plist"
           test -n "$(ls dist/*.zip 2>/dev/null)" || { echo "manca lo zip del bundle"; exit 1; }
+          # installer: DMG (trascina in Applicazioni) e PKG (doppio clic)
+          test -n "$(ls dist/*.dmg 2>/dev/null)" || { echo "manca il dmg"; ls -l dist; exit 1; }
+          test -n "$(ls dist/*.pkg 2>/dev/null)" || { echo "manca il pkg"; ls -l dist; exit 1; }
+          hdiutil verify dist/*.dmg
+          # il dmg deve contenere l'app e il collegamento ad Applicazioni
+          MNT="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$MNT" dist/*.dmg >/dev/null
+          test -d "$MNT/PDFReaderCP.app" || { hdiutil detach "$MNT" >/dev/null; echo "app non trovata nel dmg"; exit 1; }
+          test -L "$MNT/Applications" || { hdiutil detach "$MNT" >/dev/null; echo "manca il collegamento ad Applicazioni nel dmg"; exit 1; }
+          test -f "$MNT/PDFReaderCP.app/Contents/MacOS/PDFReaderCP" || { hdiutil detach "$MNT" >/dev/null; echo "binario non trovato nel dmg"; exit 1; }
+          hdiutil detach "$MNT" >/dev/null
+          # il pkg deve installare l'app in /Applications
+          pkgutil --payload-files dist/*.pkg | grep -q 'Applications/PDFReaderCP.app/Contents/MacOS/PDFReaderCP' || { echo "payload del pkg incompleto"; exit 1; }
           ls -l dist
 
       - uses: actions/upload-artifact@v4
