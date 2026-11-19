@@ -1,4 +1,4 @@
-// PDF Reader CP 3.0 - Programma opensource progettato da Peppe CP con l'aiuto della IA.
+// PDF Reader CP 3.1 - Programma opensource progettato da Peppe CP con l'aiuto della IA.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use eframe::egui::{self, Button, Color32, RichText, Vec2};
 use pdfium_render::prelude::*;
@@ -51,10 +51,10 @@ impl PrintPrefs {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-struct Settings { printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, poster: bool, poster_cols: u32, poster_rows: u32, poster_ov: f32, mine: PrintPrefs }
+struct Settings { printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, poster: bool, poster_cols: u32, poster_rows: u32, poster_ov: f32, mine: PrintPrefs, tabs_pin: bool }
 impl Default for Settings {
     fn default() -> Self {
-        Self { printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, poster: false, poster_cols: 2, poster_rows: 2, poster_ov: 5.0, mine: PrintPrefs::default() }
+        Self { printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, poster: false, poster_cols: 2, poster_rows: 2, poster_ov: 5.0, mine: PrintPrefs::default(), tabs_pin: false }
     }
 }
 impl Settings {
@@ -1171,6 +1171,12 @@ impl App {
                     ui.checkbox(&mut self.cfg.background, "Apri sempre la finestra in secondo piano (non ruba il focus)");
                     ui.label(RichText::new("Aprendo altri PDF con il programma già aperto, restano nella sua finestra senza portarla davanti.").weak());
                     ui.checkbox(&mut self.cfg.start_max, "Avvia sempre ingrandita");
+                    #[cfg(target_os = "macos")]
+                    {
+                        ui.separator();
+                        ui.checkbox(&mut self.cfg.tabs_pin, "Fissa la barra delle schede");
+                        ui.label(RichText::new("La finestra usa la barra del titolo di macOS: se la barra non e' fissata, quella con File, stampa e schede compare solo portando il mouse in cima alla finestra.").weak());
+                    }
                 });
                 ui.group(|ui| {
                     ui.label(RichText::new("Visualizzazione").strong().color(ACCENT));
@@ -1302,14 +1308,14 @@ impl App {
         let pos = ctx.screen_rect().center() - Vec2::new(430.0, 330.0);
         egui::Window::new("Stampa").open(&mut open).collapsible(false).resizable(false).movable(true)
             .default_pos(egui::pos2(pos.x.max(8.0), pos.y.max(8.0))).show(ctx, |ui| {
-            { // pulsanti e testi piu' grandi
+            { // testi compatti ma leggibili
                 let s = ui.style_mut();
-                s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(15.5));
-                s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(14.5));
-                s.spacing.button_padding = Vec2::new(12.0, 6.0);
-                s.spacing.interact_size.y = 28.0;
-                s.spacing.icon_width = 19.0;
-                s.spacing.slider_width = 190.0;
+                s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(14.5));
+                s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(13.5));
+                s.spacing.button_padding = Vec2::new(10.0, 5.0);
+                s.spacing.interact_size.y = 26.0;
+                s.spacing.icon_width = 18.0;
+                s.spacing.slider_width = 180.0;
             }
             if self.pa_mode {
                 ui.label(RichText::new(format!("STAMPA TUTTO: LE IMPOSTAZIONI VALGONO PER TUTTE LE {} SCHEDE APERTE (TUTTE LE PAGINE DI OGNI SCHEDA)", self.docs.len())).strong().color(ACCENT));
@@ -1348,9 +1354,9 @@ impl App {
                             }
                             ui.horizontal(|ui| {
                                 ui.label("Copie");
-                                if ui.add(Button::new(RichText::new("-").size(20.0)).min_size(Vec2::new(40.0, 34.0))).clicked() { self.draft.copies = self.draft.copies.saturating_sub(1).max(1); }
+                                if ui.add(Button::new(RichText::new("-").size(18.0)).min_size(Vec2::new(38.0, 30.0))).clicked() { self.draft.copies = self.draft.copies.saturating_sub(1).max(1); }
                                 ui.add(egui::DragValue::new(&mut self.draft.copies).range(1..=99));
-                                if ui.add(Button::new(RichText::new("+").size(20.0)).min_size(Vec2::new(40.0, 34.0))).clicked() { self.draft.copies = (self.draft.copies + 1).min(99); }
+                                if ui.add(Button::new(RichText::new("+").size(18.0)).min_size(Vec2::new(38.0, 30.0))).clicked() { self.draft.copies = (self.draft.copies + 1).min(99); }
                                 ui.checkbox(&mut self.draft.collate, "Fascicola");
                             });
                         });
@@ -1452,8 +1458,8 @@ impl App {
             });
             ui.separator();
             ui.horizontal(|ui| {
-                if ui.add(Button::new(RichText::new(if self.pa_mode { "STAMPA TUTTO" } else { "Stampa" }).size(17.0).strong().color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(if self.pa_mode { 180.0 } else { 140.0 }, 40.0))).clicked() { go = true; }
-                if ui.add(Button::new(RichText::new("Annulla").size(17.0)).min_size(Vec2::new(115.0, 40.0))).clicked() { cancel = true; }
+                if ui.add(Button::new(RichText::new(if self.pa_mode { "STAMPA TUTTO" } else { "Stampa" }).size(16.0).strong().color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(if self.pa_mode { 176.0 } else { 136.0 }, 38.0))).clicked() { go = true; }
+                if ui.add(Button::new(RichText::new("Annulla").size(16.0)).min_size(Vec2::new(110.0, 38.0))).clicked() { cancel = true; }
             });
         });
         #[cfg(windows)]
@@ -1711,6 +1717,15 @@ impl eframe::App for App {
         let mut reorder: Option<(usize, usize)> = None;
         let (mut close_all, mut show_info, mut quit, mut fs_toggle) = (false, false, false, false);
         let want_scroll = std::mem::take(&mut self.scroll_tab);
+        // su macOS la finestra ha la barra del titolo e i pulsanti nativi: la barra qui sotto
+        // (File, stampa, strumenti e schede) puo' restare fissa oppure a scomparsa, e compare
+        // portando il mouse in cima alla finestra. Sulle altre piattaforme resta sempre visibile
+        // perche' contiene anche i pulsanti della finestra.
+        let macos = cfg!(target_os = "macos");
+        let bar_h = if self.tabs_overflow { 52.0 } else { 38.0 };
+        let bar_visible = !macos || self.st.tabs_pin || self.docs.is_empty() || self.tab_drag.is_some()
+            || ctx.pointer_latest_pos().map_or(false, |p| p.y <= ctx.screen_rect().top() + bar_h + 2.0);
+        if bar_visible {
         egui::TopBottomPanel::top("top")
             .exact_height(if self.tabs_overflow { 52.0 } else { 38.0 })
             .frame(egui::Frame::none().fill(BAR).inner_margin(egui::Margin::symmetric(6.0, 3.0)))
@@ -1721,10 +1736,12 @@ impl eframe::App for App {
                 if bar.double_clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maxed)); }
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if icon_btn(ui, Ic::Close, "Chiudi", true) { quit = true; }
-                        if icon_btn(ui, Ic::Max, if maxed { "Ripristina" } else { "Massimizza" }, true) { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maxed)); }
-                        if icon_btn(ui, Ic::Min, "Riduci a icona", true) { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); }
-                        ui.separator();
+                        if !macos { // su macOS ci sono i pulsanti nativi della barra del titolo
+                            if icon_btn(ui, Ic::Close, "Chiudi", true) { quit = true; }
+                            if icon_btn(ui, Ic::Max, if maxed { "Ripristina" } else { "Massimizza" }, true) { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maxed)); }
+                            if icon_btn(ui, Ic::Min, "Riduci a icona", true) { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); }
+                            ui.separator();
+                        }
                         all |= icon_btn(ui, Ic::All, "STAMPA TUTTO / A GRUPPO: scegli le pagine di ogni scheda e stampa tutto insieme", has_docs);
                         q |= icon_btn(ui, Ic::Quick, "Stampa subito: scheda corrente, ultime impostazioni (Ctrl+Maiusc+P)", cur_doc.is_some());
                         pd |= icon_btn(ui, Ic::Preview, "Stampa… con anteprima (Ctrl+P)", cur_doc.is_some());
@@ -1760,6 +1777,9 @@ impl eframe::App for App {
                                 });
                                 ui.separator();
                                 if mi(ui, "Schermo intero", "F11", true) { fs_toggle = true; }
+                                #[cfg(target_os = "macos")]
+                                ui.checkbox(&mut self.st.tabs_pin, "Fissa la barra delle schede")
+                                    .on_hover_text("Se non e' fissata, questa barra compare solo portando il mouse in cima alla finestra");
                                 ui.checkbox(&mut self.st.background, "Apri sempre in secondo piano")
                                     .on_hover_text("Aprendo altri PDF la finestra del programma non passa davanti: non perdi il focus su quello che stai usando");
                                 ui.separator();
@@ -1807,6 +1827,16 @@ impl eframe::App for App {
                     });
                 });
             });
+        }
+        // barra a scomparsa: una piccola maniglia in cima segnala dove ripresentarla
+        if !bar_visible {
+            let r = ctx.screen_rect();
+            egui::Area::new(egui::Id::new("bar_hint")).fixed_pos(egui::pos2(r.center().x - 20.0, r.top() + 3.0)).show(ctx, |ui| {
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(40.0, 4.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 2.0, Color32::from_gray(150));
+                resp.on_hover_text("Porta il mouse qui per la barra con File, stampa e schede");
+            });
+        }
         if quit { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
         if fs_toggle { self.fs = !self.fs; ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fs)); }
         if show_info { self.show_info = true; }
@@ -2081,9 +2111,10 @@ impl eframe::App for App {
             });
             if !open { self.show_info = false; }
         }
-        #[cfg(not(windows))]
+        #[cfg(all(unix, not(target_os = "macos")))]
         resize_grips(ctx); // senza cornice di sistema: bordi e angoli ridimensionano la finestra
         // contorno nero attorno alla finestra (la finestra non ha la cornice di Windows)
+        #[cfg(not(target_os = "macos"))]
         ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("window_outline")))
             .rect_stroke(ctx.screen_rect().shrink(0.75), 0.0, egui::Stroke::new(1.5, Color32::from_gray(75)));
         if self.st != before { self.st.save(); } // stampante / "N su 1" scelti nella barra restano per "Stampa subito"
@@ -2149,7 +2180,10 @@ fn main() -> eframe::Result<()> {
     let cfg0 = Settings::load();
     let icon = eframe::icon_data::from_png_bytes(ICON).expect("icona");
     #[allow(unused_mut)] // `vp` si riassegna solo su macOS/Linux (app_id)
-    let mut vp = egui::ViewportBuilder::default().with_inner_size([1200.0, 760.0]).with_min_inner_size([800.0, 500.0]).with_maximized(cfg0.start_max).with_active(!cfg0.background).with_decorations(false).with_icon(icon).with_title("PDF Reader CP");
+    let mut vp = egui::ViewportBuilder::default().with_inner_size([1200.0, 760.0]).with_min_inner_size([800.0, 500.0]).with_maximized(cfg0.start_max).with_active(!cfg0.background)
+        // su macOS si usano la barra del titolo e i pulsanti nativi della finestra (traffic lights)
+        .with_decorations(!cfg!(target_os = "macos"))
+        .with_icon(icon).with_title("PDF Reader CP");
     #[cfg(unix)]
     {
         vp = vp.with_app_id("pdf-reader-cp"); // nome usato dal dock/launcher di Linux

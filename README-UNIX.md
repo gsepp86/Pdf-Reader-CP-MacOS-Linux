@@ -1,6 +1,6 @@
 # PDF Reader CP per macOS e Linux
 
-Port della versione Windows 3.0: stesso programma (egui + PDFium), stesso look, con stampa
+Port della versione Windows 3.1: stesso programma (egui + PDFium), stesso look, con stampa
 funzionante su macOS e Linux.
 
 ## Cosa cambia rispetto a Windows
@@ -51,8 +51,8 @@ finestra lo dice all'inizio del lavoro invece di fallire in silenzio.
 
 Lo script scarica PDFium da `bblanchon/pdfium-binaries`, compila in release e crea:
 
-- Linux: `dist/PDFReaderCP_3.0.0_amd64.deb` e `dist/PDFReaderCP-3.0.0-linux-x64.tar.gz`
-- macOS: `dist/PDFReaderCP-3.0.0-macos-universal.dmg` (installer), `dist/PDFReaderCP-3.0.0-macos-universal.pkg` (installer) e `dist/PDFReaderCP-3.0.0-macos-universal.zip` (app da scompattare)
+- Linux: `dist/PDFReaderCP_3.1.0_amd64.deb` e `dist/PDFReaderCP-3.1.0-linux-x64.tar.gz`
+- macOS: `dist/PDFReaderCP-3.1.0-macos-universal.dmg` (installer), `dist/PDFReaderCP-3.1.0-macos-universal.pkg` (installer) e `dist/PDFReaderCP-3.1.0-macos-universal.zip` (app da scompattare)
 
 Dipendenze per compilare su Linux:
 
@@ -67,10 +67,10 @@ sui sistemi con CUPS.
 
 ## Installare
 
-**macOS (.dmg)** — apri `PDFReaderCP-3.0.0-macos-universal.dmg` e trascina `PDFReaderCP`
+**macOS (.dmg)** — apri `PDFReaderCP-3.1.0-macos-universal.dmg` e trascina `PDFReaderCP`
 nel collegamento *Applications* (Applicazioni); poi espelli l'immagine.
 
-**macOS (.pkg)** — doppio clic su `PDFReaderCP-3.0.0-macos-universal.pkg` e segui
+**macOS (.pkg)** — doppio clic su `PDFReaderCP-3.1.0-macos-universal.pkg` e segui
 l'installazione: l'app finisce in *Applicazioni*.
 
 **macOS (.zip)** — in alternativa, scompatta lo zip e sposta `PDFReaderCP.app` in *Applicazioni*.
@@ -82,7 +82,7 @@ destro sull'app > *Apri*, oppure esegui
 **Linux (.deb)**
 
 ```bash
-sudo dpkg -i PDFReaderCP_3.0.0_amd64.deb
+sudo dpkg -i PDFReaderCP_3.1.0_amd64.deb
 sudo apt -f install   # solo se mancano dipendenze
 ```
 
