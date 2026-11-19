@@ -1,6 +1,6 @@
 ; Inno Setup 6 - https://jrsoftware.org/isinfo.php
 #define AppName "PDF Reader CP"
-#define AppVer "3.2"
+#define AppVer "3.3"
 #define Exe "PDFReaderCP.exe"
 
 [Setup]

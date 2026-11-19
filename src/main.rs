@@ -8,6 +8,8 @@ use std::io::{BufRead as _, BufReader, Write as _};
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "macos")]
 mod mac_open; // PDF aperti dal Finder (Apple Event), vedi il modulo
+#[cfg(target_os = "macos")]
+mod mac_menu; // menu dell'applicazione (accanto alla mela) in italiano
 
 const ACCENT: Color32 = Color32::from_rgb(198, 47, 47);
 const BAR: Color32 = Color32::from_rgb(229, 231, 235);
@@ -54,10 +56,10 @@ impl PrintPrefs {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-struct Settings { printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, poster: bool, poster_cols: u32, poster_rows: u32, poster_ov: f32, mine: PrintPrefs, tabs_pin: bool }
+struct Settings { printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, poster: bool, poster_cols: u32, poster_rows: u32, poster_ov: f32, mine: PrintPrefs, tabs_pin: bool, thumbs: bool }
 impl Default for Settings {
     fn default() -> Self {
-        Self { printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, poster: false, poster_cols: 2, poster_rows: 2, poster_ov: 5.0, mine: PrintPrefs::default(), tabs_pin: false }
+        Self { printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, poster: false, poster_cols: 2, poster_rows: 2, poster_ov: 5.0, mine: PrintPrefs::default(), tabs_pin: false, thumbs: false }
     }
 }
 impl Settings {
@@ -618,7 +620,7 @@ mod spool {
 mod spool;
 
 // ---------- applicazione ----------
-struct Doc { id: u64, pdf: PdfDocument<'static>, path: PathBuf, name: String, sizes: Vec<(f32, f32)>, cur: usize, zoom: f32, fitpage: bool, tex: HashMap<(usize, i32), egui::TextureHandle>, text: HashMap<usize, Vec<TCh>>, ptext: HashMap<usize, Vec<char>> }
+struct Doc { id: u64, pdf: PdfDocument<'static>, path: PathBuf, name: String, sizes: Vec<(f32, f32)>, cur: usize, zoom: f32, fitpage: bool, tex: HashMap<(usize, i32), egui::TextureHandle>, text: HashMap<usize, Vec<TCh>>, ptext: HashMap<usize, Vec<char>>, thumbs: HashMap<usize, egui::TextureHandle> }
 #[derive(PartialEq, Clone, Copy)]
 enum Tab { Home, Doc(usize) }
 type PvKey = (u64, ColorMode, i32); // versione del foglio + colore + chiaro/scuro
@@ -789,7 +791,7 @@ impl App {
                 } else {
                     let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                     let id = self.next_id; self.next_id += 1;
-                    self.docs.push(Doc { id, pdf, path, name, sizes, cur: 0, zoom: 1.0, fitpage: self.st.fit_page, tex: HashMap::new(), text: HashMap::new(), ptext: HashMap::new() });
+                    self.docs.push(Doc { id, pdf, path, name, sizes, cur: 0, zoom: 1.0, fitpage: self.st.fit_page, tex: HashMap::new(), text: HashMap::new(), ptext: HashMap::new(), thumbs: HashMap::new() });
                     self.tab = Tab::Doc(self.docs.len() - 1);
                     self.scroll_tab = true;
                 }
@@ -854,6 +856,17 @@ impl App {
         if let Some(v) = rfd::FileDialog::new().add_filter("PDF", &["pdf", "PDF"]).set_title("Apri PDF").pick_files() {
             for p in v { self.open(p); }
         }
+    }
+
+    /// Mini anteprima di una pagina per la colonna di sinistra (resa una volta sola, poi in cache).
+    fn thumb(&mut self, ctx: &egui::Context, di: usize, page: usize) -> Option<egui::TextureHandle> {
+        if let Some(t) = self.docs[di].thumbs.get(&page) { return Some(t.clone()); }
+        let (w, h, d) = render(&self.docs[di].pdf, page, 104)?;
+        let t = ctx.load_texture("thumb", egui::ColorImage::from_rgba_unmultiplied([w, h], &d), egui::TextureOptions::LINEAR);
+        let doc = &mut self.docs[di];
+        if doc.thumbs.len() >= 400 { doc.thumbs.clear(); }
+        doc.thumbs.insert(page, t.clone());
+        Some(t)
     }
 
     fn get_tex(&mut self, ctx: &egui::Context, di: usize, page: usize, width: i32) -> Option<egui::TextureHandle> {
@@ -1507,7 +1520,7 @@ impl App {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Ic { Preview, Quick, All, Min, Max, Close, Pan, Sel }
+enum Ic { Preview, Quick, All, Min, Max, Close, Pan, Sel, Thumbs }
 
 fn icon_btn(ui: &mut egui::Ui, ic: Ic, tip: &str, enabled: bool) -> bool { icon_btn_a(ui, ic, tip, enabled, false) }
 
@@ -1535,6 +1548,13 @@ fn icon_btn_a(ui: &mut egui::Ui, ic: Ic, tip: &str, enabled: bool, active: bool)
                 let (tx, ty, bx, by, px, py) = (dx * 11.0, dy * 11.0, dx * 6.0, dy * 6.0, -dy * 3.5, dx * 3.5);
                 p.add(egui::Shape::convex_polygon(vec![v(tx, ty), v(bx + px, by + py), v(bx - px, by - py)], col, egui::Stroke::NONE));
             }
+        }
+        Ic::Thumbs => { // colonna di mini pagine + pagina grande: le anteprime a sinistra
+            for i in 0..3 {
+                let y = -9.0 + i as f32 * 6.0;
+                p.rect_stroke(egui::Rect::from_min_max(v(-9.0, y), v(-2.0, y + 4.5)), 0.0, st);
+            }
+            p.rect_stroke(egui::Rect::from_min_max(v(0.0, -9.0), v(9.0, 9.0)), 1.0, st);
         }
         Ic::Min => { p.line_segment([v(-5.0, 4.0), v(5.0, 4.0)], st); }
         Ic::Max => { p.rect_stroke(egui::Rect::from_center_size(c, Vec2::splat(10.0)), 0.0, st); }
@@ -1666,7 +1686,12 @@ impl eframe::App for App {
         #[cfg(target_os = "macos")]
         for p in mac_open::take() { self.open(p); }
         let before = self.st.clone();
-        if !self.started { self.started = true; if self.st.start_max && !self.st.background { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true)); } } // si apre sempre ingrandita
+        if !self.started {
+            self.started = true;
+            #[cfg(target_os = "macos")]
+            mac_menu::install(); // menu dell'app in italiano (AppKit lo crea in inglese)
+            if self.st.start_max && !self.st.background { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true)); } // si apre sempre ingrandita
+        }
         // PDF inviati da un secondo avvio del programma: si aprono qui, in nuove schede
         // controllo aggiornamenti: il risultato arriva dal thread che interroga GitHub
         if let Some(rx) = self.upd.take() {
@@ -1783,6 +1808,7 @@ impl eframe::App for App {
                         ui.separator();
                         if icon_btn_a(ui, Ic::Pan, "Sposta la pagina con il mouse (H)", cur_doc.is_some(), self.pan) { self.pan = true; }
                         if icon_btn_a(ui, Ic::Sel, "Seleziona testo (T)", cur_doc.is_some(), !self.pan) { self.pan = false; }
+                        if icon_btn_a(ui, Ic::Thumbs, "Mini anteprime delle pagine a sinistra", cur_doc.is_some(), self.st.thumbs) { self.st.thumbs = !self.st.thumbs; }
                         let (_, drag) = ui.allocate_exact_size(Vec2::new(56.0, 28.0), egui::Sense::click_and_drag());
                         if drag.drag_started() { ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag); }
                         if drag.double_clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maxed)); }
@@ -1812,6 +1838,8 @@ impl eframe::App for App {
                                 });
                                 ui.separator();
                                 if mi(ui, "Schermo intero", "F11", true) { fs_toggle = true; }
+                                ui.checkbox(&mut self.st.thumbs, "Mini anteprime delle pagine")
+                                    .on_hover_text("Mostra a sinistra le miniature di tutte le pagine: un clic porta a quella pagina");
                                 #[cfg(target_os = "macos")]
                                 ui.checkbox(&mut self.st.tabs_pin, "Fissa la barra delle schede")
                                     .on_hover_text("Se non e' fissata, questa barra compare solo portando il mouse in cima alla finestra");
@@ -1903,6 +1931,48 @@ impl eframe::App for App {
                 }
             }
         } else { self.sel = None; }
+
+        // ---- mini anteprime: colonna a sinistra con le pagine del documento ----
+        if self.st.thumbs {
+            if let Tab::Doc(i) = self.tab {
+                if i < self.docs.len() {
+                    let cur = self.docs[i].cur;
+                    let mut go = None;
+                    egui::SidePanel::left("mini_pagine").exact_width(148.0).resizable(false)
+                        .frame(egui::Frame::none().fill(Color32::from_rgb(236, 237, 240)).inner_margin(egui::Margin::symmetric(6.0, 6.0)))
+                        .show(ctx, |ui| {
+                            let n = self.docs[i].sizes.len();
+                            ui.label(RichText::new(format!("Pagine · {n}")).strong().size(13.0));
+                            ui.add_space(4.0);
+                            egui::ScrollArea::vertical().id_salt("mini_scroll").auto_shrink([false, false]).show_rows(ui, 166.0, n, |ui, range| {
+                                for p in range {
+                                    let ratio = { let (pw, ph) = self.docs[i].sizes[p]; (ph / pw).max(0.1) };
+                                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 166.0), egui::Sense::click());
+                                    let ctx2 = ui.ctx().clone();
+                                    if let Some(t) = self.thumb(&ctx2, i, p) {
+                                        let w = (rect.width() - 20.0).min(104.0);
+                                        let h = (w * ratio).min(142.0);
+                                        let img = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.top() + 4.0 + h / 2.0), Vec2::new(w, h));
+                                        let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                                        ui.painter().image(t.id(), img, uv, Color32::WHITE);
+                                        let col = if p == cur { ACCENT } else { Color32::from_gray(160) };
+                                        ui.painter().rect_stroke(img, 2.0, egui::Stroke::new(if p == cur { 2.0 } else { 1.0 }, col));
+                                        ui.painter().text(egui::pos2(rect.center().x, img.bottom() + 9.0), egui::Align2::CENTER_CENTER,
+                                            format!("{}", p + 1), egui::FontId::proportional(11.0), if p == cur { ACCENT } else { Color32::from_gray(90) });
+                                    }
+                                    if resp.clicked() { go = Some(p); }
+                                    resp.on_hover_text(format!("Vai a pagina {}", p + 1));
+                                }
+                            });
+                        });
+                    if let Some(p) = go {
+                        self.docs[i].cur = p;
+                        self.sel = None;
+                        self.scroll_reset = Some(false);
+                    }
+                }
+            }
+        }
 
         // ---- area documento: occupa tutto lo spazio rimasto ----
         egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::from_rgb(107, 114, 128))).show(ctx, |ui| match self.tab {

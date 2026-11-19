@@ -1,11 +1,11 @@
-# PDF Reader CP 3.2
+# PDF Reader CP 3.3
 Programma opensource progettato da Peppe CP con l'aiuto della IA.
 
 Lettore PDF a schede in Rust (egui + PDFium): una sola barra in alto con schede e comandi di stampa, documento a tutto schermo.
 
 ## Creare l'installer per Windows
 **Metodo 1 - sul tuo PC (Windows 10/11 x64):** installa Rust (https://rustup.rs), poi doppio clic su `build.bat`.
-Scarica da solo pdfium.dll e Inno Setup e produce `dist\PDFReaderCP_Setup_3.2.exe`.
+Scarica da solo pdfium.dll e Inno Setup e produce `dist\PDFReaderCP_Setup_3.3.exe`.
 
 **Metodo 2 - senza installare nulla:** carica la cartella su GitHub, poi Actions > "Crea installer" > Run workflow.
 L'installer si scarica dagli "Artifacts" a fine lavoro.
@@ -13,7 +13,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 ## Uso
 - Barra del titolo (una sola riga): **File** | schede (tutto lo spazio disponibile) | icone **Stampa…**, **Stampa subito**, **STAMPA TUTTO** | riduci / massimizza / chiudi.
 - Menu **File**: Apri, Chiudi scheda / tutte, Stampa…, Stampa subito, STAMPA TUTTO, Stampante, Pagine per foglio, Schermo intero, **Info**, Esci.
-- **Info**: mostra la versione (3.2) e il pulsante **Cerca la versione piu' recente**, che controlla le release su GitHub senza bloccare il programma e, se ce n'e' una nuova, offre il link alla pagina delle release.
+- **Info**: mostra la versione (3.3) e il pulsante **Cerca la versione piu' recente**, che controlla le release su GitHub senza bloccare il programma e, se ce n'e' una nuova, offre il link alla pagina delle release.
 - **Stampa…** (Ctrl+P): anteprima dettagliata (1, 2, 4, 6, 9, 16 pagine per foglio), copie, fascicola, intervallo, scala, rotazione, centratura. La finestra si sposta trascinando la barra del titolo.
 - **Stampa subito** (Ctrl+Maiusc+P): scheda corrente con le ultime impostazioni, senza anteprima.
 - **STAMPA TUTTO / A GRUPPO**: finestra grande con l'elenco delle schede aperte; accanto a ogni file si scrivono le pagine da stampare (vuoto = tutte). In alto i totali: pagine totali da stampare, fogli per copia, copie e totale fogli. Due pulsanti: **STAMPA A GRUPPO** (un solo lavoro, con le pagine scelte impaginate insieme: la pagina 1 del file 1 e la pagina 3 del file 2 possono stare sullo stesso foglio, per esempio 2 su 1) e **STAMPA TUTTO** (ogni file resta un lavoro separato con tutte le sue pagine, come nella stampa standard, utile per la fascicolazione del driver). Il tasto si raggiunge dall'icona con le pagine impilate o da File > STAMPA TUTTO / A GRUPPO...
@@ -39,6 +39,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 - **Stampa poster**: nella finestra Stampa... l'opzione *Stampa poster (una pagina su piu' fogli)* ingrandisce una sola pagina e la divide su piu' fogli (griglie 1x2, 2x1, 2x2, 3x2, 2x3, 3x3, 4x4) con sovrapposizione regolabile in millimetri sui lati interni, per unire i fogli senza tagliare il disegno. L'anteprima mostra il singolo foglio con riga e colonna nella griglia; con il poster sono disattivate le pagine per foglio e la scala (la pagina e' adattata all'intero poster). Nella striscia di sovrapposizione ogni foglio riporta i **segni di taglio** (due tacche per lato interno) e la scritta **R<riga>C<colonna>** per riconoscere e montare i fogli; con sovrapposizione 0 mm i segni non vengono stampati.
 - **Intervallo personalizzato**: si possono ripetere le pagine, per esempio `1,1` (pagina 1 due volte, utile con 2 su 1), `2x3` (pagina 2 tre volte) o `1-3x2` (ogni pagina due volte).
 - **Schede**: la barra di scorrimento compare sotto le schede solo quando sono troppe.
+- **Mini anteprime**: il pulsante con le paginette accanto agli strumenti (o File > Mini anteprime delle pagine) apre a sinistra la colonna con le miniature di tutte le pagine; un clic porta a quella pagina. Su macOS il menu accanto alla mela (Informazioni, Nascondi, Esci...) e' in italiano.
 
 ## Se vuoi contribuire al mio lavoro ti lascio in basso il pulsante per contribuire anche con una piccola donazione simbolica visto il tempo che ti farò risparmiare per stampare grossi quantitativi di pdf ;-)
 
