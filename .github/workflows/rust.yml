@@ -21,9 +21,14 @@ jobs:
 
       # egui/eframe (X11/Wayland + OpenGL) e libcups (collegata dal crate `printers`)
       - name: Dipendenze di sistema
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev \
+          # il runner a volte ha unattended-upgrades che tiene il lock di apt: senza questo
+          # lo step resta fermo per decine di minuti su `apt-get update`
+          sudo systemctl stop unattended-upgrades.service 2>/dev/null || true
+          sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update
+          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libwayland-dev libx11-dev \
             libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libegl1-mesa-dev \
             libcups2-dev
 
