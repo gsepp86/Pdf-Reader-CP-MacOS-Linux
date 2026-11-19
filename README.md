@@ -1,11 +1,11 @@
-# PDF Reader CP 3.1
+# PDF Reader CP 3.2
 Programma opensource progettato da Peppe CP con l'aiuto della IA.
 
 Lettore PDF a schede in Rust (egui + PDFium): una sola barra in alto con schede e comandi di stampa, documento a tutto schermo.
 
 ## Creare l'installer per Windows
 **Metodo 1 - sul tuo PC (Windows 10/11 x64):** installa Rust (https://rustup.rs), poi doppio clic su `build.bat`.
-Scarica da solo pdfium.dll e Inno Setup e produce `dist\PDFReaderCP_Setup_3.1.exe`.
+Scarica da solo pdfium.dll e Inno Setup e produce `dist\PDFReaderCP_Setup_3.2.exe`.
 
 **Metodo 2 - senza installare nulla:** carica la cartella su GitHub, poi Actions > "Crea installer" > Run workflow.
 L'installer si scarica dagli "Artifacts" a fine lavoro.
@@ -13,7 +13,7 @@ L'installer si scarica dagli "Artifacts" a fine lavoro.
 ## Uso
 - Barra del titolo (una sola riga): **File** | schede (tutto lo spazio disponibile) | icone **Stampa…**, **Stampa subito**, **STAMPA TUTTO** | riduci / massimizza / chiudi.
 - Menu **File**: Apri, Chiudi scheda / tutte, Stampa…, Stampa subito, STAMPA TUTTO, Stampante, Pagine per foglio, Schermo intero, **Info**, Esci.
-- **Info**: mostra la versione (3.1) e il pulsante **Cerca la versione piu' recente**, che controlla le release su GitHub senza bloccare il programma e, se ce n'e' una nuova, offre il link alla pagina delle release.
+- **Info**: mostra la versione (3.2) e il pulsante **Cerca la versione piu' recente**, che controlla le release su GitHub senza bloccare il programma e, se ce n'e' una nuova, offre il link alla pagina delle release.
 - **Stampa…** (Ctrl+P): anteprima dettagliata (1, 2, 4, 6, 9, 16 pagine per foglio), copie, fascicola, intervallo, scala, rotazione, centratura. La finestra si sposta trascinando la barra del titolo.
 - **Stampa subito** (Ctrl+Maiusc+P): scheda corrente con le ultime impostazioni, senza anteprima.
 - **STAMPA TUTTO / A GRUPPO**: finestra grande con l'elenco delle schede aperte; accanto a ogni file si scrivono le pagine da stampare (vuoto = tutte). In alto i totali: pagine totali da stampare, fogli per copia, copie e totale fogli. Due pulsanti: **STAMPA A GRUPPO** (un solo lavoro, con le pagine scelte impaginate insieme: la pagina 1 del file 1 e la pagina 3 del file 2 possono stare sullo stesso foglio, per esempio 2 su 1) e **STAMPA TUTTO** (ogni file resta un lavoro separato con tutte le sue pagine, come nella stampa standard, utile per la fascicolazione del driver). Il tasto si raggiunge dall'icona con le pagine impilate o da File > STAMPA TUTTO / A GRUPPO...

@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, time::{Duration, Instant}};
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "macos")]
+mod mac_open; // PDF aperti dal Finder (Apple Event), vedi il modulo
 
 const ACCENT: Color32 = Color32::from_rgb(198, 47, 47);
 const BAR: Color32 = Color32::from_rgb(229, 231, 235);
@@ -686,6 +688,11 @@ impl App {
         let start_pan = st.start_pan;
         let ipc = listener.map(|l| { let (tx, rx) = std::sync::mpsc::channel(); serve(l, tx, cc.egui_ctx.clone()); rx });
         let mut app = App { pdfium, docs: vec![], tab: Tab::Home, draft: st.clone(), st, printers, show_print: false, prev: 0, pv: None, msg: String::new(), msg_at: None, logo, fs: false, show_info: false, scroll_tab: false, ipc, started: false, sel: None, paper: A4, paper_key: (String::new(), String::new()), pv_raw: None, pv_gen: 0, last_size: (0, 0), last_change: Instant::now(), pan: start_pan, search: String::new(), search_hit: None, search_focus: false, jump: false, show_cfg: false, cfg: Settings::default(), cfg_tab: 0, show_pall: false, pa_mode: false, pall_spec: Vec::new(), drv_seen: String::new(), gjob: None, over_acc: 0.0, over_at: Instant::now(), edge: (true, false), scroll_reset: None, tabs_overflow: false, task: None, tab_drag: None, next_id: 1, bar_hide: Instant::now() + Duration::from_secs(3), bar_lit: Instant::now(), upd: None, upd_msg: String::new(), upd_url: String::new(), pwd: None };
+        #[cfg(target_os = "macos")]
+        {
+            mac_open::attach(cc.egui_ctx.clone());
+            for p in mac_open::take() { app.open(p); } // PDF con cui e' stato lanciato dal Finder
+        }
         for a in init { app.open(a); }
         app
     }
@@ -1581,9 +1588,10 @@ fn mi(ui: &mut egui::Ui, text: &str, shortcut: &str, en: bool) -> bool {
     c
 }
 
-/// Su macOS e Linux la finestra e' senza cornice di sistema: bordi e angoli diventano
-/// maniglie di ridimensionamento, altrimenti la finestra resterebbe di dimensione fissa.
-#[cfg(not(windows))]
+/// Su Linux la finestra e' senza cornice di sistema: bordi e angoli diventano maniglie di
+/// ridimensionamento, altrimenti la finestra resterebbe di dimensione fissa. Su macOS la
+/// cornice e' quella nativa, quindi il ridimensionamento e' quello di sistema.
+#[cfg(all(unix, not(target_os = "macos")))]
 fn resize_grips(ctx: &egui::Context) {
     use egui::viewport::ResizeDirection as D;
     let r = ctx.screen_rect();
@@ -1654,6 +1662,9 @@ fn cups_options(ui: &mut egui::Ui, printer: &str, drv_printer: &mut String, drv_
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _f: &mut eframe::Frame) {
+        // PDF aperti dal Finder (doppio clic, Apri con) mentre il programma era gia' avviato
+        #[cfg(target_os = "macos")]
+        for p in mac_open::take() { self.open(p); }
         let before = self.st.clone();
         if !self.started { self.started = true; if self.st.start_max && !self.st.background { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true)); } } // si apre sempre ingrandita
         // PDF inviati da un secondo avvio del programma: si aprono qui, in nuove schede
@@ -2204,7 +2215,15 @@ fn serve(lst: std::net::TcpListener, tx: std::sync::mpsc::Sender<Ipc>, ctx: egui
 }
 
 fn main() -> eframe::Result<()> {
-    let args: Vec<PathBuf> = std::env::args().skip(1).map(|a| { let p = PathBuf::from(a); std::path::absolute(&p).unwrap_or(p) }).collect();
+    // su macOS il Finder manda i file con un Apple Event (vedi `mac_open`) e sulla riga di
+    // comando aggiunge solo -psn_0_...: si tengono gli argomenti che sono davvero file
+    let args: Vec<PathBuf> = std::env::args().skip(1)
+        .filter(|a| !a.starts_with('-'))
+        .map(|a| { let p = PathBuf::from(a); std::path::absolute(&p).unwrap_or(p) })
+        .filter(|p| p.is_file())
+        .collect();
+    #[cfg(target_os = "macos")]
+    mac_open::install(); // prima di run_native: l'evento di avvio non deve andare perso
     // se il programma e' gia' aperto, i PDF si aprono li' (in nuove schede) e questo processo termina
     let listener = match single_instance(&args) { Ok(l) => l, Err(()) => return Ok(()) };
     let cfg0 = Settings::load();

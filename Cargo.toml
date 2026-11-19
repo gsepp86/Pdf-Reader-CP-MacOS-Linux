@@ -1,6 +1,6 @@
 [package]
 name = "pdf-reader-cp"
-version = "3.1.0"
+version = "3.2.0"
 edition = "2021"
 description = "PDF Reader CP - lettore PDF opensource con stampa rapida"
 
@@ -22,6 +22,11 @@ windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Graphics_Gd
 
 [target.'cfg(unix)'.dependencies]
 png = "0.17" # fogli di stampa PNG per CUPS (macOS/Linux)
+
+# macOS: ricevere i PDF aperti dal Finder (Apple Event kAEOpenDocuments)
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSAppleEventDescriptor", "NSAppleEventManager", "NSNotification", "NSObject", "NSString", "NSURL"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
