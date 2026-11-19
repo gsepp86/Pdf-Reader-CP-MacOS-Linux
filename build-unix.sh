@@ -10,9 +10,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 UNIVERSAL=0
+MODE=all
 for a in "$@"; do
   case "$a" in
     --universal) UNIVERSAL=1 ;;
+    --app) MODE=app ;;   # solo app e zip (niente installer)
+    --dmg) MODE=dmg ;;   # solo installer DMG, usando l'app gia' compilata
+    --pkg) MODE=pkg ;;   # solo installer PKG, usando l'app gia' compilata
     -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opzione sconosciuta: $a" >&2; exit 1 ;;
   esac
@@ -45,8 +49,59 @@ case "$OS" in
   *) echo "Sistema non supportato: $OS (su Windows usa build.bat)" >&2; exit 1 ;;
 esac
 
-echo "== PDF Reader CP $VERSION - $OS $TAG =="
 mkdir -p dist vendor
+
+# Installer macOS: DMG (si apre, si trascina l'app in Applicazioni) e PKG (doppio clic).
+make_dmg() {
+  local APP=dist/PDFReaderCP.app DMG="dist/PDFReaderCP-$VERSION-$TAG.dmg" STAGE=dist/dmg-stage
+  if ! command -v hdiutil >/dev/null 2>&1; then echo "hdiutil non disponibile: DMG non creato" >&2; return 1; fi
+  rm -rf "$STAGE" "$DMG"
+  mkdir -p "$STAGE"
+  cp -R "$APP" "$STAGE/"
+  ln -s /Applications "$STAGE/Applications"
+  cat > "$STAGE/LEGGIMI.txt" <<EOF
+PDF Reader CP $VERSION (macOS 10.13 o successivo, Intel e Apple Silicon)
+
+INSTALLAZIONE
+1. Trascina PDFReaderCP nella cartella Applicazioni.
+2. Al primo avvio fai clic destro sull'app > Apri (l'app e' firmata solo ad-hoc,
+   senza certificato Apple), poi conferma Apri.
+
+In alternativa, da Terminale:
+   xattr -dr com.apple.quarantine /Applications/PDFReaderCP.app
+
+Se usi il pacchetto .pkg basta il doppio clic: installa l'app in Applicazioni.
+EOF
+  hdiutil create -volname "PDF Reader CP $VERSION" -srcfolder "$STAGE" -format UDZO -ov "$DMG"
+  rm -rf "$STAGE"
+  echo "Creato $DMG"
+}
+
+make_pkg() {
+  local APP=dist/PDFReaderCP.app PKGROOT=dist/pkg-root PKG="dist/PDFReaderCP-$VERSION-$TAG.pkg"
+  if ! command -v pkgbuild >/dev/null 2>&1; then echo "pkgbuild non disponibile: PKG non creato" >&2; return 1; fi
+  rm -rf "$PKGROOT" "$PKG"
+  mkdir -p "$PKGROOT/Applications"
+  cp -R "$APP" "$PKGROOT/Applications/"
+  # i file installati devono appartenere a root:wheel, non all'utente del runner
+  if command -v sudo >/dev/null 2>&1; then sudo -n chown -R root:wheel "$PKGROOT" 2>/dev/null || true; fi
+  pkgbuild --root "$PKGROOT" --identifier com.peppecp.pdfreadercp --version "$VERSION" \
+    --install-location / "$PKG" >/dev/null
+  rm -rf "$PKGROOT"
+  echo "Creato $PKG"
+}
+
+# Richiesta di un solo installer (usato dal workflow per avere passaggi separati):
+# l'app deve essere gia' stata compilata con `--universal --app`.
+if [ "$MODE" = dmg ] || [ "$MODE" = pkg ]; then
+  if [ "$OS" != Darwin ]; then echo "Gli installer DMG/PKG si creano solo su macOS" >&2; exit 1; fi
+  if [ ! -d dist/PDFReaderCP.app ]; then echo "Manca dist/PDFReaderCP.app: esegui prima ./build-unix.sh --universal --app" >&2; exit 1; fi
+  if [ "$MODE" = dmg ]; then make_dmg; else make_pkg; fi
+  echo; echo "Pacchetti pronti in dist/:"; ls -1 dist | sed 's/^/  /'
+  exit 0
+fi
+
+echo "== PDF Reader CP $VERSION - $OS $TAG =="
 
 # 1. PDFium accanto all'eseguibile
 if [ ! -f "vendor/$LIB" ]; then
@@ -161,45 +216,10 @@ if [ "$OS" = Darwin ]; then
   ditto -c -k --keepParent "$APP" "$ZIP"
   echo "Creato $ZIP"
 
-  # Installer DMG: si apre, si trascina l'app in Applicazioni e si smonta.
-  if command -v hdiutil >/dev/null 2>&1; then
-    DMG="dist/PDFReaderCP-$VERSION-$TAG.dmg"
-    STAGE=dist/dmg-stage
-    rm -rf "$STAGE" "$DMG"
-    mkdir -p "$STAGE"
-    cp -R "$APP" "$STAGE/"
-    ln -s /Applications "$STAGE/Applications"
-    cat > "$STAGE/LEGGIMI.txt" <<EOF
-PDF Reader CP $VERSION (macOS 10.13 o successivo, Intel e Apple Silicon)
-
-INSTALLAZIONE
-1. Trascina PDFReaderCP nella cartella Applicazioni.
-2. Al primo avvio fai clic destro sull'app > Apri (l'app e' firmata solo ad-hoc,
-   senza certificato Apple), poi conferma Apri.
-
-In alternativa, da Terminale:
-   xattr -dr com.apple.quarantine /Applications/PDFReaderCP.app
-
-Se usi il pacchetto .pkg basta il doppio clic: installa l'app in Applicazioni.
-EOF
-    hdiutil create -volname "PDF Reader CP $VERSION" -srcfolder "$STAGE" -format UDZO -ov -quiet "$DMG"
-    rm -rf "$STAGE"
-    echo "Creato $DMG"
-  fi
-
-  # Installer PKG: doppio clic e l'app finisce in /Applications.
-  if command -v pkgbuild >/dev/null 2>&1; then
-    PKGROOT=dist/pkg-root
-    PKG="dist/PDFReaderCP-$VERSION-$TAG.pkg"
-    rm -rf "$PKGROOT" "$PKG"
-    mkdir -p "$PKGROOT/Applications"
-    cp -R "$APP" "$PKGROOT/Applications/"
-    # i file installati devono appartenere a root:wheel, non all'utente del runner
-    if command -v sudo >/dev/null 2>&1; then sudo -n chown -R root:wheel "$PKGROOT" 2>/dev/null || true; fi
-    pkgbuild --root "$PKGROOT" --identifier com.peppecp.pdfreadercp --version "$VERSION" \
-      --install-location / "$PKG" >/dev/null
-    rm -rf "$PKGROOT"
-    echo "Creato $PKG"
+  # Installer (solo nella build completa; con --app si ottiene solo app e zip)
+  if [ "$MODE" = all ]; then
+    make_dmg
+    make_pkg
   fi
 fi
 

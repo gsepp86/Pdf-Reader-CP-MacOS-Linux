@@ -68,10 +68,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Compila e impacchetta
-        run: |
-          chmod +x build-unix.sh
-          ./build-unix.sh --universal
+      - name: Compila l'app universale
+        run: bash build-unix.sh --universal --app
+
+      - name: Installer DMG
+        run: bash build-unix.sh --universal --dmg
+
+      - name: Installer PKG
+        run: bash build-unix.sh --universal --pkg
 
       - name: Controlla il pacchetto macOS
         run: |
