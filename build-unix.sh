@@ -78,15 +78,23 @@ EOF
 }
 
 make_pkg() {
-  local APP=dist/PDFReaderCP.app PKGROOT=dist/pkg-root PKG="dist/PDFReaderCP-$VERSION-$TAG.pkg"
-  if ! command -v pkgbuild >/dev/null 2>&1; then echo "pkgbuild non disponibile: PKG non creato" >&2; return 1; fi
-  rm -rf "$PKGROOT" "$PKG"
+  local APP=dist/PDFReaderCP.app PKG="dist/PDFReaderCP-$VERSION-$TAG.pkg"
+  rm -f "$PKG"
+  if command -v productbuild >/dev/null 2>&1; then
+    # il pacchetto installa il bundle direttamente in /Applications
+    productbuild --component "$APP" /Applications "$PKG"
+    echo "Creato $PKG"
+    return 0
+  fi
+  if ! command -v pkgbuild >/dev/null 2>&1; then echo "ne' productbuild ne' pkgbuild disponibili: PKG non creato" >&2; return 1; fi
+  local PKGROOT=dist/pkg-root
+  rm -rf "$PKGROOT"
   mkdir -p "$PKGROOT/Applications"
   cp -R "$APP" "$PKGROOT/Applications/"
   # i file installati devono appartenere a root:wheel, non all'utente del runner
   if command -v sudo >/dev/null 2>&1; then sudo -n chown -R root:wheel "$PKGROOT" 2>/dev/null || true; fi
   pkgbuild --root "$PKGROOT" --identifier com.peppecp.pdfreadercp --version "$VERSION" \
-    --install-location / "$PKG" >/dev/null
+    --install-location / "$PKG"
   rm -rf "$PKGROOT"
   echo "Creato $PKG"
 }

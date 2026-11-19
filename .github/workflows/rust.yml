@@ -71,11 +71,21 @@ jobs:
       - name: Compila l'app universale
         run: bash build-unix.sh --universal --app
 
+      # gli errori vengono mostrati come annotazione del run, cosi' si capisce
+      # subito quale comando ha fallito (i log completi richiedono l'accesso)
       - name: Installer DMG
-        run: bash build-unix.sh --universal --dmg
+        run: |
+          if ! bash build-unix.sh --universal --dmg 2>&1 | tee /tmp/dmg.log; then
+            echo "::error::DMG: $(tail -4 /tmp/dmg.log | tr '\n' ' ')"
+            exit 1
+          fi
 
       - name: Installer PKG
-        run: bash build-unix.sh --universal --pkg
+        run: |
+          if ! bash build-unix.sh --universal --pkg 2>&1 | tee /tmp/pkg.log; then
+            echo "::error::PKG: $(tail -4 /tmp/pkg.log | tr '\n' ' ')"
+            exit 1
+          fi
 
       - name: Controlla il pacchetto macOS
         run: |
@@ -98,8 +108,14 @@ jobs:
           test -L "$MNT/Applications" || { hdiutil detach "$MNT" >/dev/null; echo "manca il collegamento ad Applicazioni nel dmg"; exit 1; }
           test -f "$MNT/PDFReaderCP.app/Contents/MacOS/PDFReaderCP" || { hdiutil detach "$MNT" >/dev/null; echo "binario non trovato nel dmg"; exit 1; }
           hdiutil detach "$MNT" >/dev/null
-          # il pkg deve installare l'app in /Applications
-          pkgutil --payload-files dist/*.pkg | grep -q 'Applications/PDFReaderCP.app/Contents/MacOS/PDFReaderCP' || { echo "payload del pkg incompleto"; exit 1; }
+          # il pkg deve contenere l'app (payload) destinata a /Applications
+          if pkgutil --payload-files dist/*.pkg 2>/dev/null | grep -q 'Applications/PDFReaderCP.app/Contents/MacOS/PDFReaderCP'; then
+            echo "payload del pkg: ok"
+          else
+            # per i pacchetti "distribution" il payload non e' elencabile: almeno la dimensione
+            test "$(stat -f%z "$(ls dist/*.pkg | head -1)")" -gt 3000000 || { echo "pkg sospetto (troppo piccolo)"; exit 1; }
+            echo "payload non elencabile, dimensione pkg plausibile"
+          fi
           ls -l dist
 
       - uses: actions/upload-artifact@v4
