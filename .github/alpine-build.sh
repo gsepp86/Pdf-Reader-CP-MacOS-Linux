@@ -3,7 +3,8 @@
 # Usato dal workflow: docker run --rm -v "$PWD:/src" -w /src alpine:3.20 sh /src/.github/alpine-build.sh
 set -eu
 
-apk add --no-cache build-base pkgconf cups-dev libxkbcommon-dev wayland-dev \
+# bash serve a build-unix.sh (Alpine ha solo la shell di busybox)
+apk add --no-cache bash build-base pkgconf cups-dev libxkbcommon-dev wayland-dev \
   libx11-dev libxcursor-dev libxrandr-dev libxi-dev mesa-dev \
   zstd tar gzip curl ca-certificates
 
