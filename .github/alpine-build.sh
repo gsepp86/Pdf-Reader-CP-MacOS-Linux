@@ -13,7 +13,21 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profil
 export PATH="$HOME/.cargo/bin:$PATH"
 
 chmod +x build-unix.sh
-./build-unix.sh
+# musl di default linka staticamente: la libreria CUPS invece e' condivisa (libcups.so),
+# quindi il binario resta dinamico contro la musl del sistema.
+export RUSTFLAGS="-C target-feature=-crt-static"
+# se la compilazione fallisce il messaggio finisce nelle annotazioni del run, cosi' si legge
+# subito quale comando ha fallito (i log completi richiedono l'accesso)
+set +e
+./build-unix.sh > /tmp/build.log 2>&1
+rc=$?
+set -e
+cat /tmp/build.log
+if [ "$rc" -ne 0 ]; then
+  echo "::error::$(grep -E 'error(\[|:)' /tmp/build.log | head -4 | tr '\n' ' ' | cut -c1-700)"
+  echo "::error::$(tail -8 /tmp/build.log | tr '\n' ' ' | cut -c1-700)"
+  exit 1
+fi
 
 # le dipendenze dichiarate nel .apk devono risolversi nei repository di Alpine
 apk add --allow-untrusted --simulate ./dist/*.apk
