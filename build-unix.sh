@@ -28,14 +28,22 @@ VERSION="$(sed -n 's/^version *= *"\(.*\)".*/\1/p' Cargo.toml | head -1)"
 case "$VERSION" in *.*.0) VERSION="${VERSION%.0}" ;; esac
 OS="$(uname -s)"
 ARCH="$(uname -m)"
-LIB=""; ASSET=""; TAG=""; DEB_ARCH=""
+LIB=""; ASSET=""; TAG=""; DEB_ARCH=""; ARCH_PKG=""
+# libc del sistema: su Alpine (musl) servono il PDFium musl e il pacchetto .apk,
+# sulle distribuzioni con glibc il .deb e il pacchetto di Arch (.pkg.tar.zst).
+LIBC=glibc
+if ldd --version 2>&1 | grep -qi musl || ls /lib/ld-musl-*.so.1 >/dev/null 2>&1; then LIBC=musl; fi
 
 case "$OS" in
   Linux)
     LIB=libpdfium.so
     case "$ARCH" in
-      x86_64|amd64) ASSET=pdfium-linux-x64;   TAG=linux-x64;   DEB_ARCH=amd64 ;;
-      aarch64|arm64) ASSET=pdfium-linux-arm64; TAG=linux-arm64; DEB_ARCH=arm64 ;;
+      x86_64|amd64)
+        if [ "$LIBC" = musl ]; then ASSET=pdfium-linux-musl-x64; else ASSET=pdfium-linux-x64; fi
+        TAG=linux-x64; DEB_ARCH=amd64; ARCH_PKG=x86_64 ;;
+      aarch64|arm64)
+        if [ "$LIBC" = musl ]; then ASSET=pdfium-linux-musl-arm64; else ASSET=pdfium-linux-arm64; fi
+        TAG=linux-arm64; DEB_ARCH=arm64; ARCH_PKG=aarch64 ;;
       *) echo "Architettura non supportata: $ARCH" >&2; exit 1 ;;
     esac ;;
   Darwin)
@@ -102,6 +110,87 @@ make_pkg() {
   echo "Creato $PKG"
 }
 
+# Albero dei file installati su Linux: usato da .deb, .pkg.tar.zst (Arch) e .apk (Alpine).
+install_linux_tree() {
+  local ROOT="$1"
+  mkdir -p "$ROOT/usr/lib/pdfreadercp" "$ROOT/usr/bin" "$ROOT/usr/share/applications" \
+    "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/usr/share/doc/pdf-reader-cp"
+  cp "$BIN" "$ROOT/usr/lib/pdfreadercp/PDFReaderCP"
+  cp "vendor/$LIB" "$ROOT/usr/lib/pdfreadercp/"
+  chmod +x "$ROOT/usr/lib/pdfreadercp/PDFReaderCP"
+  printf '#!/bin/sh\nexec /usr/lib/pdfreadercp/PDFReaderCP "$@"\n' > "$ROOT/usr/bin/pdfreadercp"
+  chmod +x "$ROOT/usr/bin/pdfreadercp"
+  cp unix/pdfreader-cp.desktop "$ROOT/usr/share/applications/"
+  cp assets/icon.png "$ROOT/usr/share/icons/hicolor/256x256/apps/pdf-reader-cp.png"
+  cp README-UNIX.md "$ROOT/usr/share/doc/pdf-reader-cp/README.md"
+}
+
+# Arch Linux: .pkg.tar.zst (tar + zstd con .PKGINFO, come lo produce makepkg).
+make_pkg_arch() {
+  local ROOT=dist/arch-root PKG="dist/PDFReaderCP-$VERSION-$ARCH_PKG.pkg.tar.zst" SZ
+  if ! command -v zstd >/dev/null 2>&1; then echo "zstd non disponibile: pkg.tar.zst non creato" >&2; return 1; fi
+  rm -rf "$ROOT" "$PKG"
+  install_linux_tree "$ROOT"
+  SZ=$(( $(du -sk "$ROOT" | cut -f1) * 1024 ))
+  cat > "$ROOT/.PKGINFO" <<EOF
+pkgname = pdf-reader-cp
+pkgbase = pdf-reader-cp
+pkgver = $VERSION-1
+pkgdesc = Lettore PDF a schede con stampa rapida
+url = https://github.com/gsepp86/Pdf-Reader-CP
+builddate = $(date -u +%s)
+packager = Peppe CP <https://github.com/gsepp86/Pdf-Reader-CP>
+size = $SZ
+arch = $ARCH_PKG
+license = unknown
+depend = glibc
+depend = gcc-libs
+depend = cups
+depend = mesa
+depend = libxkbcommon
+depend = wayland
+depend = libx11
+depend = libxcursor
+depend = libxrandr
+depend = libxi
+depend = ttf-dejavu
+EOF
+  tar -C "$ROOT" --owner=0 --group=0 --numeric-owner -cf - . | zstd -q -19 -T0 -o "$PKG"
+  rm -rf "$ROOT"
+  echo "Creato $PKG"
+}
+
+# Alpine Linux: .apk (tar.gz con .PKGINFO), compilato contro musl.
+make_apk() {
+  local ROOT=dist/apk-root PKG="dist/PDFReaderCP_${VERSION}_${DEB_ARCH}.apk" SZ
+  rm -rf "$ROOT" "$PKG"
+  install_linux_tree "$ROOT"
+  SZ=$(( $(du -sk "$ROOT" | cut -f1) * 1024 ))
+  cat > "$ROOT/.PKGINFO" <<EOF
+# Generato da build-unix.sh
+pkgname = pdf-reader-cp
+pkgver = $VERSION-r0
+pkgdesc = Lettore PDF a schede con stampa rapida
+url = https://github.com/gsepp86/Pdf-Reader-CP
+builddate = $(date -u +%s)
+packager = Peppe CP
+size = $SZ
+arch = $ARCH_PKG
+license = unknown
+depend = cups-libs
+depend = mesa
+depend = libxkbcommon
+depend = libx11
+depend = libxcursor
+depend = libxrandr
+depend = libxi
+depend = font-dejavu
+EOF
+  tar -C "$ROOT" -czf "$PKG" .PKGINFO usr
+  rm -rf "$ROOT"
+  echo "Creato $PKG"
+}
+
 # Richiesta di un solo installer (usato dal workflow per avere passaggi separati):
 # l'app deve essere gia' stata compilata con `--universal --app`.
 if [ "$MODE" = dmg ] || [ "$MODE" = pkg ]; then
@@ -165,17 +254,8 @@ EOF
   if command -v dpkg-deb >/dev/null 2>&1; then
     ROOT=dist/deb-root
     rm -rf "$ROOT"
-    mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/lib/pdfreadercp" "$ROOT/usr/bin" \
-      "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" \
-      "$ROOT/usr/share/doc/pdf-reader-cp"
-    cp "$BIN" "$ROOT/usr/lib/pdfreadercp/PDFReaderCP"
-    cp "vendor/$LIB" "$ROOT/usr/lib/pdfreadercp/"
-    chmod +x "$ROOT/usr/lib/pdfreadercp/PDFReaderCP"
-    printf '#!/bin/sh\nexec /usr/lib/pdfreadercp/PDFReaderCP "$@"\n' > "$ROOT/usr/bin/pdfreadercp"
-    chmod +x "$ROOT/usr/bin/pdfreadercp"
-    cp unix/pdfreader-cp.desktop "$ROOT/usr/share/applications/"
-    cp assets/icon.png "$ROOT/usr/share/icons/hicolor/256x256/apps/pdf-reader-cp.png"
-    cp README-UNIX.md "$ROOT/usr/share/doc/pdf-reader-cp/README.md"
+    mkdir -p "$ROOT/DEBIAN"
+    install_linux_tree "$ROOT"
     cat > "$ROOT/DEBIAN/control" <<EOF
 Package: pdf-reader-cp
 Version: $VERSION
@@ -195,6 +275,9 @@ EOF
     rm -rf "$ROOT"
     echo "Creato $DEB"
   fi
+
+  # stesse applicazioni, altri formati: .apk su Alpine (musl), .pkg.tar.zst su Arch
+  if [ "$LIBC" = musl ]; then make_apk; else make_pkg_arch || true; fi
 fi
 
 if [ "$OS" = Darwin ]; then

@@ -4,6 +4,7 @@
 //! "Quit …"): qui lo si sostituisce con uno uguale ma tradotto.
 #![cfg(target_os = "macos")]
 
+use crate::lang::{english, t};
 use objc2::rc::Retained;
 use objc2::runtime::Sel;
 use objc2::sel;
@@ -29,13 +30,16 @@ pub fn install() {
     let barra = NSMenu::new(mtm);
     let testa = voce(mtm, NOME, None, "");
     let menu = NSMenu::new(mtm);
-    menu.addItem(&voce(mtm, &format!("Informazioni su {NOME}"), Some(sel!(orderFrontStandardAboutPanel:)), ""));
+    let ab = if english() { format!("About {NOME}") } else { format!("Informazioni su {NOME}") };
+    let hide = if english() { format!("Hide {NOME}") } else { format!("Nascondi {NOME}") };
+    let quit = if english() { format!("Quit {NOME}") } else { format!("Esci da {NOME}") };
+    menu.addItem(&voce(mtm, &ab, Some(sel!(orderFrontStandardAboutPanel:)), ""));
     menu.addItem(&NSMenuItem::separatorItem(mtm));
-    menu.addItem(&voce(mtm, &format!("Nascondi {NOME}"), Some(sel!(hide:)), "h"));
-    menu.addItem(&voce(mtm, "Nascondi gli altri", Some(sel!(hideOtherApplications:)), ""));
-    menu.addItem(&voce(mtm, "Mostra tutto", Some(sel!(unhideAllApplications:)), ""));
+    menu.addItem(&voce(mtm, &hide, Some(sel!(hide:)), "h"));
+    menu.addItem(&voce(mtm, t("Nascondi gli altri", "Hide others"), Some(sel!(hideOtherApplications:)), ""));
+    menu.addItem(&voce(mtm, t("Mostra tutto", "Show all"), Some(sel!(unhideAllApplications:)), ""));
     menu.addItem(&NSMenuItem::separatorItem(mtm));
-    menu.addItem(&voce(mtm, &format!("Esci da {NOME}"), Some(sel!(terminate:)), "q"));
+    menu.addItem(&voce(mtm, &quit, Some(sel!(terminate:)), "q"));
     testa.setSubmenu(Some(&menu));
     barra.addItem(&testa);
     NSApplication::sharedApplication(mtm).setMainMenu(Some(&barra));

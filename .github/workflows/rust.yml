@@ -30,7 +30,7 @@ jobs:
           sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update
           sudo apt-get install -y --no-install-recommends libxkbcommon-dev libwayland-dev libx11-dev \
             libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libegl1-mesa-dev \
-            libcups2-dev
+            libcups2-dev zstd
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -42,12 +42,38 @@ jobs:
       - name: Controlla i pacchetti
         run: |
           test -n "$(ls -A dist 2>/dev/null)" || { echo "dist/ vuota: nessun pacchetto Linux"; exit 1; }
+          # oltre a .deb e .tar.gz c'e' il pacchetto di Arch (.pkg.tar.zst)
+          test -n "$(ls dist/*.pkg.tar.zst 2>/dev/null)" || { echo "manca il pacchetto .pkg.tar.zst"; exit 1; }
+          tar --zstd -tf dist/*.pkg.tar.zst | grep -q '^\./\.PKGINFO$' || { echo ".PKGINFO assente"; exit 1; }
+          tar --zstd -tf dist/*.pkg.tar.zst | grep -q '^\./usr/lib/pdfreadercp/PDFReaderCP$' || { echo "binario assente nel pkg.tar.zst"; exit 1; }
           ls -l dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: PDFReaderCP-linux
           path: dist/*
+          if-no-files-found: error
+
+  # Alpine Linux usa musl: il binario va compilato la' (PDFium musl) e impacchettato in .apk.
+  alpine:
+    name: Alpine Linux (apk)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Docker evita il problema delle action Node (glibc) dentro un container Alpine
+      - name: Compila e impacchetta in Alpine
+        run: docker run --rm -v "$PWD:/src" -w /src alpine:3.20 sh /src/.github/alpine-build.sh
+
+      - name: Controlla il pacchetto .apk
+        run: |
+          test -n "$(ls dist/*.apk 2>/dev/null)" || { echo "manca il pacchetto .apk"; ls -l dist; exit 1; }
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PDFReaderCP-alpine
+          path: dist/*.apk
           if-no-files-found: error
 
   macos:
@@ -133,7 +159,7 @@ jobs:
   # scontrano ("release already exists") e fanno risultare fallita una build ok.
   release:
     name: Pubblica la release
-    needs: [linux, macos]
+    needs: [linux, alpine, macos]
     if: startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release/v')
     runs-on: ubuntu-22.04
     steps:

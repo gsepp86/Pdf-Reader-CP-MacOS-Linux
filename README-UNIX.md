@@ -13,7 +13,7 @@ Il codice Windows non e' stato toccato: le differenze sono tutte dietro
 | Stampa | spooler GDI | CUPS (comando `lp`) |
 | Interfaccia di stampa | anteprima + finestra del driver | anteprima + opzioni della coda CUPS nella finestra **Stampa** |
 | `pdfium.dll` | accanto a `PDFReaderCP.exe` | `libpdfium.dylib` / `libpdfium.so` accanto all'eseguibile |
-| Pacchetto | installer Inno Setup | `.app` (macOS), `.deb` + `.tar.gz` (Linux) |
+| Pacchetto | installer Inno Setup | `.app` (macOS), `.deb` + `.pkg.tar.zst` + `.apk` + `.tar.gz` (Linux) |
 
 ## Interfaccia di stampa su Linux
 
@@ -51,7 +51,9 @@ finestra lo dice all'inizio del lavoro invece di fallire in silenzio.
 
 Lo script scarica PDFium da `bblanchon/pdfium-binaries`, compila in release e crea:
 
-- Linux: `dist/PDFReaderCP_3.3_amd64.deb` e `dist/PDFReaderCP-3.3-linux-x64.tar.gz`
+- Linux (glibc): `dist/PDFReaderCP_3.3_amd64.deb`, `dist/PDFReaderCP-3.3-linux-x64.tar.gz`
+  e `dist/PDFReaderCP-3.3-x86_64.pkg.tar.zst` (Arch)
+- Linux (musl): `dist/PDFReaderCP_3.3_amd64.apk` (Alpine), compilato con `pdfium-linux-musl-x64`
 - macOS: `dist/PDFReaderCP-3.3-macos-universal.dmg` (installer), `dist/PDFReaderCP-3.3-macos-universal.pkg` (installer) e `dist/PDFReaderCP-3.3-macos-universal.zip` (app da scompattare)
 
 Dipendenze per compilare su Linux:
@@ -88,6 +90,21 @@ sudo apt -f install   # solo se mancano dipendenze
 
 **Linux (tar.gz)** — estrai dove preferisci e avvia `./PDFReaderCP` tenendo `libpdfium.so`
 nella stessa cartella.
+
+**Arch Linux (.pkg.tar.zst)**
+
+```bash
+sudo pacman -U PDFReaderCP_3.3_x86_64.pkg.tar.zst
+```
+
+**Alpine Linux (.apk)** — pacchetto compilato contro musl:
+
+```bash
+sudo apk add --allow-untrusted ./PDFReaderCP_3.3_amd64.apk
+```
+
+Il `.apk` e' senza firma (non c'e' una chiave Alpine pubblicata): `--allow-untrusted` serve
+solo la prima volta, poi il programma si avvia come `pdfreadercp` o dal menu.
 
 ## Percorsi: differenze tra Windows, macOS e Linux
 

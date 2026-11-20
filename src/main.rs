@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, time::{Duration, Instant}};
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::sync::atomic::{AtomicBool, Ordering};
+mod lang; // lingua dell'interfaccia (italiano / inglese), scelta in Impostazioni
+use lang::{t, Lang};
 #[cfg(target_os = "macos")]
 mod mac_open; // PDF aperti dal Finder (Apple Event), vedi il modulo
 #[cfg(target_os = "macos")]
@@ -63,10 +65,10 @@ impl PrintPrefs {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-struct Settings { printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, contrast: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, poster: bool, poster_cols: u32, poster_rows: u32, poster_ov: f32, mine: PrintPrefs, tabs_pin: bool, thumbs: bool }
+struct Settings { lang: Lang, printer: String, copies: u32, collate: bool, sel: PageSel, custom: String, scale: ScaleMode, pct: u32, rotate: bool, center: bool, nup: u32, border: bool, color: ColorMode, bright: i32, contrast: i32, drv_printer: String, drv_mode: String, background: bool, start_max: bool, start_pan: bool, fit_page: bool, ask_copies: bool, start_mode: StartMode, reset_std: bool, use_driver_defaults: bool, poster: bool, poster_cols: u32, poster_rows: u32, poster_ov: f32, mine: PrintPrefs, tabs_pin: bool, thumbs: bool }
 impl Default for Settings {
     fn default() -> Self {
-        Self { printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, contrast: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, poster: false, poster_cols: 2, poster_rows: 2, poster_ov: 5.0, mine: PrintPrefs::default(), tabs_pin: false, thumbs: false }
+        Self { lang: Lang::It, printer: String::new(), copies: 1, collate: true, sel: PageSel::All, custom: "1-".into(), scale: ScaleMode::Fit, pct: 100, rotate: true, center: true, nup: 1, border: true, color: ColorMode::Color, bright: 0, contrast: 0, drv_printer: String::new(), drv_mode: String::new(), background: false, start_max: true, start_pan: false, fit_page: false, ask_copies: true, start_mode: StartMode::Last, reset_std: true, use_driver_defaults: true, poster: false, poster_cols: 2, poster_rows: 2, poster_ov: 5.0, mine: PrintPrefs::default(), tabs_pin: false, thumbs: false }
     }
 }
 impl Settings {
@@ -686,7 +688,7 @@ impl App {
         let lib = Pdfium::pdfium_platform_library_name_at_path(&exe);
         let bind = match Pdfium::bind_to_library(lib).or_else(|_| Pdfium::bind_to_system_library()) {
             Ok(b) => b,
-            Err(_) => { err(&format!("Libreria {PDFIUM_LIB} non trovata accanto al programma. Reinstalla il programma.")); std::process::exit(1) }
+            Err(_) => { err(&if lang::english() { format!("Library {PDFIUM_LIB} not found next to the program. Reinstall it.") } else { format!("Libreria {PDFIUM_LIB} non trovata accanto al programma. Reinstalla il programma.") }); std::process::exit(1) }
         };
         let mut v = egui::Visuals::light();
         v.selection.bg_fill = ACCENT;
@@ -697,6 +699,7 @@ impl App {
         printers.sort_by_key(|p| p.to_lowercase()); // ordine alfabetico
         printers.dedup();
         let mut st = Settings::load();
+        lang::set(st.lang); // lingua scelta in Impostazioni
         st.apply_startup(&printers);
         if !printers.contains(&st.printer) {
             st.printer = printers::get_default_printer().map(|p| p.name).or_else(|| printers.first().cloned()).unwrap_or_default();
@@ -776,7 +779,7 @@ impl App {
         }
         match found {
             Some((p, h)) => { self.docs[di].cur = p; self.search_hit = Some((p, h)); self.jump = true; }
-            None => { let t = self.search.clone(); self.toast(format!("Nessun risultato per «{t}»")); }
+            None => { let q = self.search.clone(); self.toast(if lang::english() { format!("No match for «{q}»") } else { format!("Nessun risultato per «{q}»") }); }
         }
     }
 
@@ -803,7 +806,7 @@ impl App {
             Ok(pdf) => {
                 let sizes: Vec<(f32, f32)> = pdf.pages().iter().map(|p| (p.width().value, p.height().value)).collect();
                 if sizes.is_empty() {
-                    err(&format!("Impossibile aprire il file:\n{}", path.display()));
+                    err(&if lang::english() { format!("Cannot open the file:\n{}", path.display()) } else { format!("Impossibile aprire il file:\n{}", path.display()) });
                 } else {
                     let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                     let id = self.next_id; self.next_id += 1;
@@ -831,20 +834,20 @@ impl App {
         let (mut open, mut go, mut cancel) = (true, false, ctx.input(|i| i.key_pressed(egui::Key::Escape)));
         let name = p.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let pos = ctx.screen_rect().center() - Vec2::new(200.0, 120.0);
-        egui::Window::new("PDF protetto da password").open(&mut open).collapsible(false).resizable(false).movable(true)
+        egui::Window::new(t("PDF protetto da password", "Password protected PDF")).open(&mut open).collapsible(false).resizable(false).movable(true)
             .default_pos(egui::pos2(pos.x.max(8.0), pos.y.max(8.0))).show(ctx, |ui| {
                 ui.set_min_width(400.0);
-                ui.label(RichText::new(format!("Il file «{name}» e' protetto da password.")).strong().size(16.0));
-                ui.label("Inserisci la password per aprirlo.");
+                ui.label(RichText::new(if lang::english() { format!("The file «{name}» is password protected.") } else { format!("Il file «{name}» e' protetto da password.") }).strong().size(16.0));
+                ui.label(t("Inserisci la password per aprirlo.", "Enter the password to open it."));
                 ui.add_space(4.0);
                 let r = ui.add(egui::TextEdit::singleline(&mut p.text).password(true).hint_text("Password").desired_width(360.0));
                 if p.focus { r.request_focus(); p.focus = false; }
                 if ui.input(|i| i.key_pressed(egui::Key::Enter)) { go = true; }
-                if p.wrong { ui.label(RichText::new("Password errata, riprova.").strong().color(ACCENT)); }
+                if p.wrong { ui.label(RichText::new(t("Password errata, riprova.", "Wrong password, try again.")).strong().color(ACCENT)); }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if ui.add(Button::new(RichText::new("Apri").strong().color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(110.0, 36.0))).clicked() { go = true; }
-                    if ui.add(Button::new("Annulla").min_size(Vec2::new(100.0, 36.0))).clicked() { cancel = true; }
+                    if ui.add(Button::new(RichText::new(t("Apri", "Open")).strong().color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(110.0, 36.0))).clicked() { go = true; }
+                    if ui.add(Button::new(t("Annulla", "Cancel")).min_size(Vec2::new(100.0, 36.0))).clicked() { cancel = true; }
                 });
             });
         if go && !p.text.is_empty() {
@@ -869,7 +872,7 @@ impl App {
 
     fn pick(&mut self) {
         // su Linux i filtri del file dialog distinguono maiuscole/minuscole: servono"pdf" e "PDF"
-        if let Some(v) = rfd::FileDialog::new().add_filter("PDF", &["pdf", "PDF"]).set_title("Apri PDF").pick_files() {
+        if let Some(v) = rfd::FileDialog::new().add_filter("PDF", &["pdf", "PDF"]).set_title(t("Apri PDF", "Open PDF")).pick_files() {
             for p in v { self.open(p); }
         }
     }
@@ -921,10 +924,10 @@ impl App {
     /// Prepara la stampa a gruppo: `items` sono (id scheda, pagina) nell'ordine voluto. Le pagine
     /// dei vari file vengono impaginate insieme (N su 1) in UN solo lavoro di stampa.
     fn print_group(&mut self, items: Vec<(u64, usize)>) {
-        if self.task.is_some() || self.gjob.is_some() { self.toast("Stampa gia' in corso".into()); return; }
-        if self.st.printer.is_empty() { err("Nessuna stampante selezionata"); return; }
-        if self.st.poster { self.toast("La stampa poster non si combina con la stampa a gruppo".into()); return; }
-        if items.is_empty() { self.toast("Nessuna pagina selezionata per il gruppo".into()); return; }
+        if self.task.is_some() || self.gjob.is_some() { self.toast(t("Stampa gia' in corso", "Printing already in progress").into()); return; }
+        if self.st.printer.is_empty() { err(t("Nessuna stampante selezionata", "No printer selected")); return; }
+        if self.st.poster { self.toast(t("La stampa poster non si combina con la stampa a gruppo", "Poster printing cannot be combined with group printing").into()); return; }
+        if items.is_empty() { self.toast(t("Nessuna pagina selezionata per il gruppo", "No pages selected for the group").into()); return; }
         let st = self.st.clone();
         let nup = st.nup.max(1) as usize;
         let sheets: Vec<Vec<(u64, usize)>> = items.chunks(nup).map(|c| c.to_vec()).collect();
@@ -943,14 +946,14 @@ impl App {
         let Some(mut g) = self.gjob.take() else { return };
         if g.cancel {
             if let Some(j) = g.job.as_mut() { j.abort(); }
-            self.toast("Stampa del gruppo annullata".into());
+            self.toast(t("Stampa del gruppo annullata", "Group printing cancelled").into());
             return;
         }
         match self.group_advance(&mut g) {
             Ok(true) => { self.gjob = Some(g); ctx.request_repaint(); }
             Ok(false) => {
                 let (p, n) = (g.st.printer.clone(), g.sheets.len());
-                self.toast(format!("Gruppo inviato a «{p}» ({n} fogli in un solo lavoro)"));
+                self.toast(if lang::english() { format!("Group sent to «{p}» ({n} sheets in a single job)") } else { format!("Gruppo inviato a «{p}» ({n} fogli in un solo lavoro)") });
             }
             Err(e) => { if let Some(j) = g.job.as_mut() { j.abort(); } err(&e); }
         }
@@ -975,7 +978,7 @@ impl App {
                 if items.is_empty() { g.pos += 1; return Ok(true); }
                 #[allow(unused_mut)] // `b` serve mutabile solo su Windows (RGBA -> BGRA)
                 let (w, h, mut b) = compose_group(&self.docs, &items, (aw, ah), &g.st, 300.0 / 72.0, true)
-                    .ok_or("Rendering della pagina non riuscito")?;
+                    .ok_or(t("Rendering della pagina non riuscito", "Page rendering failed"))?;
                 #[cfg(windows)]
                 for q in b.chunks_exact_mut(4) { q.swap(0, 2); }
                 g.last = Some((s, w, h, b));
@@ -994,8 +997,8 @@ impl App {
 
     /// Avvia la stampa delle schede indicate (nell'ordine dato). `all_pages` = true: tutte le pagine di ogni scheda (STAMPA TUTTO).
     fn print_docs(&mut self, idx: &[usize], all_pages: bool) {
-        if self.task.is_some() { self.toast("Stampa gia' in corso".into()); return; }
-        if self.st.printer.is_empty() { err("Nessuna stampante selezionata"); return; }
+        if self.task.is_some() { self.toast(t("Stampa gia' in corso", "Printing already in progress").into()); return; }
+        if self.st.printer.is_empty() { err(t("Nessuna stampante selezionata", "No printer selected")); return; }
         let mut st = self.st.clone();
         if all_pages { st.sel = PageSel::All; }
         let ids: Vec<u64> = idx.iter().filter_map(|&i| self.docs.get(i).map(|d| d.id)).collect();
@@ -1012,12 +1015,12 @@ impl App {
         let Some(mut t) = self.task.take() else { return };
         if t.cancel {
             if let Some(j) = t.job.as_mut() { j.abort(); }
-            self.toast("Stampa annullata".into());
+            self.toast(lang::t("Stampa annullata", "Printing cancelled").into());
             return;
         }
         match self.advance(&mut t) {
             Ok(true) => { self.task = Some(t); ctx.request_repaint(); }
-            Ok(false) => { let (p, n) = (t.st.printer.clone(), t.ids.len()); self.toast(format!("Lavoro inviato a «{p}» ({n} schede in coda)")); }
+            Ok(false) => { let (p, n) = (t.st.printer.clone(), t.ids.len()); self.toast(if lang::english() { format!("Job sent to «{p}» ({n} tabs queued)") } else { format!("Lavoro inviato a «{p}» ({n} schede in coda)") }); }
             Err(e) => { if let Some(j) = t.job.as_mut() { j.abort(); } err(&e); }
         }
     }
@@ -1028,7 +1031,7 @@ impl App {
             if t.di >= t.ids.len() { return Ok(false); }
             let Some(d) = self.docs.iter().find(|d| d.id == t.ids[t.di]) else { t.di += 1; return Ok(true); }; // scheda chiusa nel frattempo
             let pages = pages_for(&t.st, d.cur, d.sizes.len());
-            if pages.is_empty() { return Err(format!("Nessuna pagina da stampare in {}", d.name)); }
+            if pages.is_empty() { return Err(if lang::english() { format!("No page to print in {}", d.name) } else { format!("Nessuna pagina da stampare in {}", d.name) }); }
             let nup = t.st.nup.max(1) as usize;
             let per = t.st.poster_tiles(); // con il poster ogni pagina occupa piu' fogli
             t.sheets = pages.chunks(nup).flat_map(|c| (0..per).map(move |_| c.to_vec())).collect();
@@ -1054,7 +1057,7 @@ impl App {
                     compose_poster(d, t.sheets[s][0], (aw, ah), &t.st, 300.0 / 72.0, true, tile % cols, tile / cols)
                 } else {
                     compose(&self.pdfium, d, &t.sheets[s], (aw, ah), &t.st, 300.0 / 72.0, true)
-                }.ok_or("Rendering della pagina non riuscito")?;
+                }.ok_or(lang::t("Rendering della pagina non riuscito", "Page rendering failed"))?;
                 #[cfg(windows)]
                 for q in b.chunks_exact_mut(4) { q.swap(0, 2); } // RGBA -> BGRA per GDI (su macOS/Linux resta RGBA per il PNG)
                 t.last = Some((s, w, h, b));
@@ -1093,11 +1096,15 @@ impl App {
         let nup = st.nup.max(1) as usize;
         let totale_file: usize = self.docs.iter().map(|d| d.sizes.len()).sum();
         let warn = c > 1 && st.ask_copies;
-        let colore = match st.color { ColorMode::Color => "COLORI", ColorMode::Auto => "AUTOMATICO", ColorMode::Gray => "BIANCO E NERO (SCALA DI GRIGI)" };
-        let contrasto = if st.contrast == 0 { String::new() } else { format!(" · CONTRASTO {:+}", st.contrast) };
-        let stampante = if st.printer.is_empty() { "(nessuna)".to_string() } else { st.printer.clone() };
+        let colore = if lang::english() {
+            match st.color { ColorMode::Color => "COLOR", ColorMode::Auto => "AUTO", ColorMode::Gray => "BLACK AND WHITE (GRAYSCALE)" }
+        } else {
+            match st.color { ColorMode::Color => "COLORI", ColorMode::Auto => "AUTOMATICO", ColorMode::Gray => "BIANCO E NERO (SCALA DI GRIGI)" }
+        };
+        let contrasto = if st.contrast == 0 { String::new() } else if lang::english() { format!(" · CONTRAST {:+}", st.contrast) } else { format!(" · CONTRASTO {:+}", st.contrast) };
+        let stampante = if st.printer.is_empty() { if lang::english() { "(none)".to_string() } else { "(nessuna)".to_string() } } else { st.printer.clone() };
         let pp = ctx.screen_rect().center() - Vec2::new(400.0, 350.0);
-        egui::Window::new("STAMPA TUTTO / A GRUPPO").open(&mut open).collapsible(false).resizable(true).movable(true)
+        egui::Window::new(t("STAMPA TUTTO / A GRUPPO", "PRINT ALL / GROUP")).open(&mut open).collapsible(false).resizable(true).movable(true)
             .default_width(800.0).default_pos(egui::pos2(pp.x.max(8.0), pp.y.max(8.0))).show(ctx, |ui| {
             ui.set_min_width(760.0);
             { // testi e pulsanti piu' grandi, come nella finestra di stampa
@@ -1107,25 +1114,25 @@ impl App {
                 s.spacing.button_padding = Vec2::new(12.0, 6.0);
                 s.spacing.interact_size.y = 30.0;
             }
-            ui.label(RichText::new(format!("{n} SCHEDE APERTE · {totale_file} PAGINE IN TUTTE NEI FILE")).strong().size(20.0));
+            ui.label(RichText::new(if lang::english() { format!("{n} OPEN TABS · {totale_file} PAGES IN ALL FILES") } else { format!("{n} SCHEDE APERTE · {totale_file} PAGINE IN TUTTE NEI FILE") }).strong().size(20.0));
             ui.add_space(4.0);
             ui.group(|ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(format!("STAMPANTE: {}", stampante.to_uppercase())).strong());
+                    ui.label(RichText::new(format!("{}: {}", t("STAMPANTE", "PRINTER"), stampante.to_uppercase())).strong());
                     ui.separator();
-                    ui.label(format!("COLORE: {colore}{contrasto}"));
+                    ui.label(format!("{}: {colore}{contrasto}", t("COLORE", "COLOR")));
                     ui.separator();
-                    ui.label(format!("COPIE: {c}"));
+                    ui.label(format!("{}: {c}", t("COPIE", "COPIES")));
                     ui.separator();
-                    ui.label(format!("{nup} PAGINE PER FOGLIO"));
+                    ui.label(if lang::english() { format!("{nup} PAGES PER SHEET") } else { format!("{nup} PAGINE PER FOGLIO") });
                     ui.separator();
-                    ui.label(if st.collate { "FASCICOLA: SI'" } else { "FASCICOLA: NO" });
+                    ui.label(if st.collate { t("FASCICOLA: SI'", "COLLATE: YES") } else { t("FASCICOLA: NO", "COLLATE: NO") });
                 });
-                if warn { ui.label(RichText::new(format!("ATTENZIONE: SONO IMPOSTATE {c} COPIE.")).strong().color(ACCENT)); }
+                if warn { ui.label(RichText::new(if lang::english() { format!("WARNING: {c} COPIES ARE SET.") } else { format!("ATTENZIONE: SONO IMPOSTATE {c} COPIE.") }).strong().color(ACCENT)); }
             });
             ui.add_space(6.0);
-            ui.label(RichText::new("PAGINE DA STAMPARE, FILE PER FILE").strong().color(ACCENT));
-            ui.label(RichText::new("Vuoto = tutte le pagine. Esempi: 1-3, 5  ·  1,1 (pagina 1 due volte)  ·  2x3 (pagina 2 tre volte).").weak().small());
+            ui.label(RichText::new(t("PAGINE DA STAMPARE, FILE PER FILE", "PAGES TO PRINT, FILE BY FILE")).strong().color(ACCENT));
+            ui.label(RichText::new(t("Vuoto = tutte le pagine. Esempi: 1-3, 5  ·  1,1 (pagina 1 due volte)  ·  2x3 (pagina 2 tre volte).", "Empty = all pages. Examples: 1-3, 5  ·  1,1 (page 1 twice)  ·  2x3 (page 2 three times).")).weak().small());
             egui::ScrollArea::vertical().id_salt("pall_files").max_height(270.0).auto_shrink([false, true]).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 for i in 0..n {
@@ -1133,9 +1140,9 @@ impl App {
                     let pp = spec_pages(&specs[i], d.sizes.len(), d.cur);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{}. {}", i + 1, short(&d.name, 46))).strong());
-                        ui.label(RichText::new(format!("{} pag.", d.sizes.len())).weak().small());
-                        ui.add(egui::TextEdit::singleline(&mut specs[i]).hint_text("tutte").desired_width(150.0));
-                        ui.label(RichText::new(format!("→ {} pagine", pp.len())).strong());
+                        ui.label(RichText::new(if lang::english() { format!("{} p.", d.sizes.len()) } else { format!("{} pag.", d.sizes.len()) }).weak().small());
+                        ui.add(egui::TextEdit::singleline(&mut specs[i]).hint_text(t("tutte", "all")).desired_width(150.0));
+                        ui.label(RichText::new(if lang::english() { format!("→ {} pages", pp.len()) } else { format!("→ {} pagine", pp.len()) }).strong());
                     });
                 }
             });
@@ -1145,29 +1152,29 @@ impl App {
             let fogli_tot = fogli * c as usize;
             ui.separator();
             egui::Grid::new("pall_tot").num_columns(2).spacing([20.0, 3.0]).show(ui, |ui| {
-                ui.label("PAGINE TOTALI DA STAMPARE");
+                ui.label(t("PAGINE TOTALI DA STAMPARE", "TOTAL PAGES TO PRINT"));
                 ui.label(RichText::new(format!("{tot}")).strong().size(19.0).color(ACCENT)); ui.end_row();
-                ui.label("FOGLI PER UNA COPIA");
-                ui.label(RichText::new(format!("{fogli}  ({nup} pagine per foglio)")).strong()); ui.end_row();
-                ui.label("COPIE");
+                ui.label(t("FOGLI PER UNA COPIA", "SHEETS PER COPY"));
+                ui.label(RichText::new(if lang::english() { format!("{fogli}  ({nup} pages per sheet)") } else { format!("{fogli}  ({nup} pagine per foglio)") }).strong()); ui.end_row();
+                ui.label(t("COPIE", "COPIES"));
                 ui.label(RichText::new(format!("{c}")).strong()); ui.end_row();
-                ui.label("TOTALE FOGLI DA STAMPARE");
+                ui.label(t("TOTALE FOGLI DA STAMPARE", "TOTAL SHEETS TO PRINT"));
                 ui.label(RichText::new(format!("{fogli_tot}")).strong().size(19.0)); ui.end_row();
             });
             ui.add_space(4.0);
-            ui.label(RichText::new("STAMPA A GRUPPO: un solo lavoro, con le pagine scelte impaginate insieme: la pagina 1 del file 1 e la pagina 3 del file 2 possono stare sullo stesso foglio (es. 2 su 1).").weak().small());
-            ui.label(RichText::new("STAMPA TUTTO: ogni file resta un lavoro separato con tutte le sue pagine, come nella stampa standard (per la fascicolazione del driver).").weak().small());
-            if st.poster { ui.label(RichText::new("Con la stampa poster attiva e' disponibile solo STAMPA TUTTO (ogni pagina su piu' fogli).").strong().color(ACCENT)); }
+            ui.label(RichText::new(t("STAMPA A GRUPPO: un solo lavoro, con le pagine scelte impaginate insieme: la pagina 1 del file 1 e la pagina 3 del file 2 possono stare sullo stesso foglio (es. 2 su 1).", "GROUP PRINTING: a single job, with the chosen pages laid out together: page 1 of file 1 and page 3 of file 2 can share the same sheet (e.g. 2 up).")).weak().small());
+            ui.label(RichText::new(t("STAMPA TUTTO: ogni file resta un lavoro separato con tutte le sue pagine, come nella stampa standard (per la fascicolazione del driver).", "PRINT ALL: every file stays a separate job with all of its pages, as in standard printing (for the driver collation).")).weak().small());
+            if st.poster { ui.label(RichText::new(t("Con la stampa poster attiva e' disponibile solo STAMPA TUTTO (ogni pagina su piu' fogli).", "With poster printing on, only PRINT ALL is available (every page on several sheets).")).strong().color(ACCENT)); }
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
-                if ui.add_enabled(!st.poster, Button::new(RichText::new("STAMPA A GRUPPO").strong().size(16.0).color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(185.0, 40.0)))
-                    .on_hover_text("Un solo lavoro: le pagine scelte qui sopra vengono impaginate insieme").clicked() { grp = true; }
-                if ui.add(Button::new(RichText::new("STAMPA TUTTO").size(16.0)).min_size(Vec2::new(150.0, 40.0)))
-                    .on_hover_text("Un lavoro per ogni file, con tutte le sue pagine").clicked() { go = true; }
-                if ui.add(Button::new(RichText::new("CAMBIA IMPOSTAZIONI").size(16.0)).min_size(Vec2::new(180.0, 40.0)))
-                    .on_hover_text("Colore, N su 1, stampante, driver, stampa poster").clicked() { change = true; }
-                if warn && ui.add(Button::new(RichText::new("1 COPIA").size(16.0)).min_size(Vec2::new(100.0, 40.0))).clicked() { one = true; }
-                if ui.add(Button::new(RichText::new("ANNULLA").size(16.0)).min_size(Vec2::new(100.0, 40.0))).clicked() { cancel = true; }
+                if ui.add_enabled(!st.poster, Button::new(RichText::new(t("STAMPA A GRUPPO", "GROUP PRINT")).strong().size(16.0).color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(185.0, 40.0)))
+                    .on_hover_text(t("Un solo lavoro: le pagine scelte qui sopra vengono impaginate insieme", "A single job: the pages chosen above are laid out together")).clicked() { grp = true; }
+                if ui.add(Button::new(RichText::new(t("STAMPA TUTTO", "PRINT ALL")).size(16.0)).min_size(Vec2::new(150.0, 40.0)))
+                    .on_hover_text(t("Un lavoro per ogni file, con tutte le sue pagine", "One job per file, with all of its pages")).clicked() { go = true; }
+                if ui.add(Button::new(RichText::new(t("CAMBIA IMPOSTAZIONI", "CHANGE SETTINGS")).size(16.0)).min_size(Vec2::new(180.0, 40.0)))
+                    .on_hover_text(t("Colore, N su 1, stampante, driver, stampa poster", "Color, N up, printer, driver, poster printing")).clicked() { change = true; }
+                if warn && ui.add(Button::new(RichText::new(t("1 COPIA", "1 COPY")).size(16.0)).min_size(Vec2::new(100.0, 40.0))).clicked() { one = true; }
+                if ui.add(Button::new(RichText::new(t("ANNULLA", "CANCEL")).size(16.0)).min_size(Vec2::new(100.0, 40.0))).clicked() { cancel = true; }
             });
         });
         self.pall_spec = ids.into_iter().zip(specs.into_iter()).collect();
@@ -1194,7 +1201,7 @@ impl App {
     /// Stampa subito la scheda indicata; con piu' di una copia chiede conferma.
     fn print_one(&mut self, di: usize) {
         let c = self.st.copies;
-        if c > 1 && self.st.ask_copies && !confirm("Stampa", &format!("Sicuro di voler stampare {c} copie del file?\n\n{}", self.docs[di].name)) { return; }
+        if c > 1 && self.st.ask_copies && !confirm(t("Stampa", "Print"), &if lang::english() { format!("Are you sure you want to print {c} copies of this file?\n\n{}", self.docs[di].name) } else { format!("Sicuro di voler stampare {c} copie del file?\n\n{}", self.docs[di].name) }) { return; }
         self.print_docs(&[di], false);
     }
 
@@ -1203,91 +1210,106 @@ impl App {
         let (mut open, mut save, mut cancel, mut reset) = (true, false, false, false);
         #[allow(unused_mut)] // cfg_drv si usa solo su Windows
         let (mut cfg_drv, mut take) = (false, false);
-        egui::Window::new("Impostazioni").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+        egui::Window::new(t("Impostazioni", "Settings")).open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
             ui.set_min_width(470.0);
             ui.horizontal(|ui| {
-                for (i, n) in ["Generale", "Stampa"].into_iter().enumerate() {
+                for (i, n) in [(t("Generale", "General")), (t("Stampa", "Printing"))].into_iter().enumerate() {
                     if ui.selectable_label(self.cfg_tab == i, RichText::new(n).size(16.0)).clicked() { self.cfg_tab = i; }
                 }
             });
             ui.separator();
             if self.cfg_tab == 0 {
                 ui.group(|ui| {
-                    ui.label(RichText::new("Avvio e finestre").strong().color(ACCENT));
-                    ui.checkbox(&mut self.cfg.background, "Apri sempre la finestra in secondo piano (non ruba il focus)");
-                    ui.label(RichText::new("Aprendo altri PDF con il programma già aperto, restano nella sua finestra senza portarla davanti.").weak());
-                    ui.checkbox(&mut self.cfg.start_max, "Avvia sempre ingrandita");
+                    ui.label(RichText::new(t("Lingua", "Language")).strong().color(ACCENT));
+                    ui.horizontal(|ui| {
+                        let mut l = self.cfg.lang;
+                        ui.radio_value(&mut l, Lang::It, "Italiano");
+                        ui.radio_value(&mut l, Lang::En, "English");
+                        if l != self.cfg.lang {
+                            self.cfg.lang = l;
+                            self.st.lang = l; // la lingua cambia subito, senza riavviare
+                            self.st.save();
+                            lang::set(l);
+                        }
+                    });
+                    ui.label(RichText::new(t("L'interfaccia cambia lingua subito.", "The interface switches language immediately.")).weak());
+                });
+                ui.group(|ui| {
+                    ui.label(RichText::new(t("Avvio e finestre", "Startup and windows")).strong().color(ACCENT));
+                    ui.checkbox(&mut self.cfg.background, t("Apri sempre la finestra in secondo piano (non ruba il focus)", "Always open the window in the background (it does not take focus)"));
+                    ui.label(RichText::new(t("Aprendo altri PDF con il programma già aperto, restano nella sua finestra senza portarla davanti.", "Opening other PDFs while the program is already running keeps them in its window without bringing it to the front.")).weak());
+                    ui.checkbox(&mut self.cfg.start_max, t("Avvia sempre ingrandita", "Always start maximized"));
                     #[cfg(target_os = "macos")]
                     {
                         ui.separator();
-                        ui.checkbox(&mut self.cfg.tabs_pin, "Fissa la barra delle schede");
-                        ui.label(RichText::new("La finestra usa la barra del titolo di macOS: se la barra non e' fissata, quella con File, stampa e schede compare solo portando il mouse in cima alla finestra.").weak());
+                        ui.checkbox(&mut self.cfg.tabs_pin, t("Fissa la barra delle schede", "Pin the tab bar"));
+                        ui.label(RichText::new(t("La finestra usa la barra del titolo di macOS: se la barra non e' fissata, quella con File, stampa e schede compare solo portando il mouse in cima alla finestra.", "The window uses the macOS title bar: unless the bar is pinned, the one with File, printing and tabs only appears when the mouse reaches the top of the window.")).weak());
                     }
                 });
                 ui.group(|ui| {
-                    ui.label(RichText::new("Visualizzazione").strong().color(ACCENT));
+                    ui.label(RichText::new(t("Visualizzazione", "View")).strong().color(ACCENT));
                     ui.horizontal(|ui| {
-                        ui.label("Strumento iniziale:");
-                        ui.radio_value(&mut self.cfg.start_pan, false, "Seleziona testo");
-                        ui.radio_value(&mut self.cfg.start_pan, true, "Sposta pagina");
+                        ui.label(t("Strumento iniziale:", "Initial tool:"));
+                        ui.radio_value(&mut self.cfg.start_pan, false, t("Seleziona testo", "Select text"));
+                        ui.radio_value(&mut self.cfg.start_pan, true, t("Sposta pagina", "Move page"));
                     });
                     ui.horizontal(|ui| {
-                        ui.label("Vista iniziale:");
-                        ui.radio_value(&mut self.cfg.fit_page, false, "Larghezza");
-                        ui.radio_value(&mut self.cfg.fit_page, true, "Pagina intera");
+                        ui.label(t("Vista iniziale:", "Initial view:"));
+                        ui.radio_value(&mut self.cfg.fit_page, false, t("Larghezza", "Width"));
+                        ui.radio_value(&mut self.cfg.fit_page, true, t("Pagina intera", "Whole page"));
                     });
                 });
             } else {
                 ui.group(|ui| {
-                    ui.label(RichText::new("All'avvio del programma").strong().color(ACCENT));
-                    ui.radio_value(&mut self.cfg.start_mode, StartMode::Last, "Usa le ultime impostazioni di stampa utilizzate");
-                    ui.radio_value(&mut self.cfg.start_mode, StartMode::Mine, "Usa le mie impostazioni predefinite (qui sotto)");
-                    ui.checkbox(&mut self.cfg.reset_std, "Ripristina sempre la stampa standard (1 su 1, tutte le pagine)");
-                    ui.checkbox(&mut self.cfg.use_driver_defaults, "Usa le impostazioni predefinite del driver (es. fronte/retro)");
+                    ui.label(RichText::new(t("All'avvio del programma", "When the program starts")).strong().color(ACCENT));
+                    ui.radio_value(&mut self.cfg.start_mode, StartMode::Last, t("Usa le ultime impostazioni di stampa utilizzate", "Use the last print settings used"));
+                    ui.radio_value(&mut self.cfg.start_mode, StartMode::Mine, t("Usa le mie impostazioni predefinite (qui sotto)", "Use my print defaults (below)"));
+                    ui.checkbox(&mut self.cfg.reset_std, t("Ripristina sempre la stampa standard (1 su 1, tutte le pagine)", "Always reset to standard printing (1 up, all pages)"));
+                    ui.checkbox(&mut self.cfg.use_driver_defaults, t("Usa le impostazioni predefinite del driver (es. fronte/retro)", "Use the driver defaults (e.g. duplex)"));
                 });
                 ui.add_enabled_ui(self.cfg.start_mode == StartMode::Mine, |ui| {
                     ui.group(|ui| {
-                        ui.label(RichText::new("Le mie impostazioni predefinite").strong().color(ACCENT));
+                        ui.label(RichText::new(t("Le mie impostazioni predefinite", "My print defaults")).strong().color(ACCENT));
                         ui.horizontal(|ui| {
-                            ui.label("Stampante:");
+                            ui.label(t("Stampante:", "Printer:"));
                             egui::ComboBox::from_id_salt("cfg_pr").width(300.0).selected_text(self.cfg.mine.printer.clone()).show_ui(ui, |ui| {
                                 for p in &self.printers { ui.selectable_value(&mut self.cfg.mine.printer, p.clone(), p); }
                             });
                         });
                         ui.horizontal(|ui| {
-                            ui.label("Copie:");
+                            ui.label(t("Copie:", "Copies:"));
                             ui.add(egui::DragValue::new(&mut self.cfg.mine.copies).range(1..=99));
                         });
                         ui.horizontal(|ui| {
-                            ui.label("Colore:");
-                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Color, "Colori");
-                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Auto, "Automatico");
-                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Gray, "Bianco e nero");
+                            ui.label(t("Colore:", "Color:"));
+                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Color, t("Colori", "Color"));
+                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Auto, t("Automatico", "Auto"));
+                            ui.radio_value(&mut self.cfg.mine.color, ColorMode::Gray, t("Bianco e nero", "Black and white"));
                         });
                         #[cfg(windows)]
                         ui.horizontal(|ui| {
-                            if ui.add(Button::new("Impostazioni driver stampante…").min_size(Vec2::new(250.0, 32.0))).clicked() { cfg_drv = true; }
-                            if !self.cfg.mine.drv_mode.is_empty() { ui.label(RichText::new("attive").weak()); }
+                            if ui.add(Button::new(t("Impostazioni driver stampante…", "Printer driver settings…")).min_size(Vec2::new(250.0, 32.0))).clicked() { cfg_drv = true; }
+                            if !self.cfg.mine.drv_mode.is_empty() { ui.label(RichText::new(t("attive", "on")).weak()); }
                         });
                         #[cfg(not(windows))]
                         {
-                            ui.label(RichText::new("Opzioni stampante (CUPS)").strong().color(ACCENT));
+                            ui.label(RichText::new(t("Opzioni stampante (CUPS)", "Printer options (CUPS)")).strong().color(ACCENT));
                             cups_options(ui, &self.cfg.mine.printer, &mut self.cfg.mine.drv_printer, &mut self.cfg.mine.drv_mode);
                         }
-                        if ui.add(Button::new("Prendi le impostazioni di stampa attuali").min_size(Vec2::new(250.0, 32.0))).clicked() { take = true; }
+                        if ui.add(Button::new(t("Prendi le impostazioni di stampa attuali", "Take the current print settings")).min_size(Vec2::new(250.0, 32.0))).clicked() { take = true; }
                     });
                 });
                 ui.group(|ui| {
-                    ui.label(RichText::new("Conferme").strong().color(ACCENT));
-                    ui.checkbox(&mut self.cfg.ask_copies, "Chiedi conferma quando stampo più di una copia");
+                    ui.label(RichText::new(t("Conferme", "Confirmation")).strong().color(ACCENT));
+                    ui.checkbox(&mut self.cfg.ask_copies, t("Chiedi conferma quando stampo più di una copia", "Ask for confirmation when printing more than one copy"));
                 });
             }
             ui.separator();
-            ui.label(RichText::new(format!("Salvate in: {}", Settings::path().map(|p| p.display().to_string()).unwrap_or_default())).weak().small());
+            ui.label(RichText::new(format!("{} {}", t("Salvate in:", "Saved in:"), Settings::path().map(|p| p.display().to_string()).unwrap_or_default())).weak().small());
             ui.horizontal(|ui| {
-                if ui.add(Button::new(RichText::new("Salva").strong().color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(110.0, 34.0))).clicked() { save = true; }
-                if ui.add(Button::new("Annulla").min_size(Vec2::new(90.0, 34.0))).clicked() { cancel = true; }
-                if ui.add(Button::new("Ripristina predefinite").min_size(Vec2::new(170.0, 34.0))).clicked() { reset = true; }
+                if ui.add(Button::new(RichText::new(t("Salva", "Save")).strong().color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(110.0, 34.0))).clicked() { save = true; }
+                if ui.add(Button::new(t("Annulla", "Cancel")).min_size(Vec2::new(90.0, 34.0))).clicked() { cancel = true; }
+                if ui.add(Button::new(t("Ripristina predefinite", "Reset to defaults")).min_size(Vec2::new(170.0, 34.0))).clicked() { reset = true; }
             });
         });
         if reset { let p = self.cfg.printer.clone(); self.cfg = Settings::default(); self.cfg.printer = p; }
@@ -1303,7 +1325,7 @@ impl App {
         #[cfg(not(windows))]
         let _ = cfg_drv;
         if take { self.cfg.mine = PrintPrefs::from_settings(&self.st); }
-        if save { self.st = self.cfg.clone(); self.st.save(); self.show_cfg = false; self.toast("Impostazioni salvate".into()); }
+        if save { self.st = self.cfg.clone(); self.st.save(); lang::set(self.st.lang); self.show_cfg = false; self.toast(t("Impostazioni salvate", "Settings saved").into()); }
         if cancel || !open { self.show_cfg = false; }
     }
 
@@ -1352,7 +1374,7 @@ impl App {
         let maxh = (ctx.screen_rect().height() - 140.0).max(320.0);
         // finestra spostabile: si trascina dalla barra del titolo (egui ricorda la posizione)
         let pos = ctx.screen_rect().center() - Vec2::new(430.0, 330.0);
-        egui::Window::new("Stampa").open(&mut open).collapsible(false).resizable(false).movable(true)
+        egui::Window::new(t("Stampa", "Print")).open(&mut open).collapsible(false).resizable(false).movable(true)
             .default_pos(egui::pos2(pos.x.max(8.0), pos.y.max(8.0))).show(ctx, |ui| {
             { // testi compatti ma leggibili
                 let s = ui.style_mut();
@@ -1364,7 +1386,12 @@ impl App {
                 s.spacing.slider_width = 180.0;
             }
             if self.pa_mode {
-                ui.label(RichText::new(format!("STAMPA TUTTO: LE IMPOSTAZIONI VALGONO PER TUTTE LE {} SCHEDE APERTE (TUTTE LE PAGINE DI OGNI SCHEDA)", self.docs.len())).strong().color(ACCENT));
+                let avviso = if lang::english() {
+                    format!("PRINT ALL: THESE SETTINGS APPLY TO ALL {} OPEN TABS (ALL PAGES OF EVERY TAB)", self.docs.len())
+                } else {
+                    format!("STAMPA TUTTO: LE IMPOSTAZIONI VALGONO PER TUTTE LE {} SCHEDE APERTE (TUTTE LE PAGINE DI OGNI SCHEDA)", self.docs.len())
+                };
+                ui.label(RichText::new(avviso).strong().color(ACCENT));
                 ui.add_space(4.0);
             }
             ui.horizontal_top(|ui| {
@@ -1373,59 +1400,60 @@ impl App {
                     ui.vertical(|ui| {
                         ui.set_width(390.0);
                         ui.group(|ui| {
-                            ui.label(RichText::new("Stampante").strong().color(ACCENT));
+                            ui.label(RichText::new(t("Stampante", "Printer")).strong().color(ACCENT));
                             egui::ComboBox::from_id_salt("pr").width(350.0).selected_text(self.draft.printer.clone()).show_ui(ui, |ui| {
                                 for p in &self.printers { ui.selectable_value(&mut self.draft.printer, p.clone(), p); }
                             });
                             #[cfg(windows)]
                             {
                                 ui.horizontal(|ui| {
-                                    if ui.add(Button::new("Impostazioni driver stampante…").min_size(Vec2::new(270.0, 34.0)))
-                                        .on_hover_text("Apre le proprietà del driver: fronte/retro, vassoio, qualità, colore, finitura...").clicked() { drv = true; }
-                                    if !self.draft.drv_mode.is_empty() && ui.add(Button::new("Azzera").min_size(Vec2::new(70.0, 34.0))).on_hover_text("Torna alle impostazioni predefinite del driver").clicked() { drv_reset = true; }
+                                    if ui.add(Button::new(t("Impostazioni driver stampante…", "Printer driver settings…")).min_size(Vec2::new(270.0, 34.0)))
+                                        .on_hover_text(t("Apre le proprietà del driver: fronte/retro, vassoio, qualità, colore, finitura...", "Opens the driver properties: duplex, tray, quality, color, finishing...")).clicked() { drv = true; }
+                                    if !self.draft.drv_mode.is_empty() && ui.add(Button::new(t("Azzera", "Clear")).min_size(Vec2::new(70.0, 34.0))).on_hover_text(t("Torna alle impostazioni predefinite del driver", "Back to the driver defaults")).clicked() { drv_reset = true; }
                                 });
-                                if !self.draft.drv_mode.is_empty() { ui.label(RichText::new("Impostazioni del driver attive").weak()); }
-                                else { ui.label(RichText::new("Impostazioni predefinite del driver (es. fronte/retro)").weak()); }
+                                if !self.draft.drv_mode.is_empty() { ui.label(RichText::new(t("Impostazioni del driver attive", "Driver settings active")).weak()); }
+                                else { ui.label(RichText::new(t("Impostazioni predefinite del driver (es. fronte/retro)", "Driver defaults (e.g. duplex)")).weak()); }
                             }
                             #[cfg(not(windows))]
                             {
                                 // interfaccia di stampa: le opzioni della coda CUPS si scelgono qui
-                                ui.label(RichText::new("Opzioni stampante (CUPS)").strong().color(ACCENT));
+                                ui.label(RichText::new(t("Opzioni stampante (CUPS)", "Printer options (CUPS)")).strong().color(ACCENT));
                                 cups_options(ui, &self.draft.printer, &mut self.draft.drv_printer, &mut self.draft.drv_mode);
                                 if !self.draft.drv_mode.is_empty()
-                                    && ui.add(Button::new("Azzera opzioni").min_size(Vec2::new(160.0, 30.0))).clicked()
+                                    && ui.add(Button::new(t("Azzera opzioni", "Clear options")).min_size(Vec2::new(160.0, 30.0))).clicked()
                                 {
                                     drv_reset = true;
                                 }
                             }
                             ui.horizontal(|ui| {
-                                ui.label("Copie");
+                                ui.label(t("Copie", "Copies"));
                                 if ui.add(Button::new(RichText::new("-").size(18.0)).min_size(Vec2::new(38.0, 30.0))).clicked() { self.draft.copies = self.draft.copies.saturating_sub(1).max(1); }
                                 ui.add(egui::DragValue::new(&mut self.draft.copies).range(1..=99));
                                 if ui.add(Button::new(RichText::new("+").size(18.0)).min_size(Vec2::new(38.0, 30.0))).clicked() { self.draft.copies = (self.draft.copies + 1).min(99); }
-                                ui.checkbox(&mut self.draft.collate, "Fascicola");
+                                ui.checkbox(&mut self.draft.collate, t("Fascicola", "Collate"));
                             });
                         });
                         ui.group(|ui| {
-                            ui.label(RichText::new(format!("Intervallo pagine · {n} totali")).strong().color(ACCENT));
+                            let titolo_pagine = if lang::english() { format!("Page range · {n} in total") } else { format!("Intervallo pagine · {n} totali") };
+                            ui.label(RichText::new(titolo_pagine).strong().color(ACCENT));
                             ui.horizontal(|ui| {
-                                ui.radio_value(&mut self.draft.sel, PageSel::All, "Tutto");
-                                ui.radio_value(&mut self.draft.sel, PageSel::Current, "Corrente");
-                                ui.radio_value(&mut self.draft.sel, PageSel::Custom, "Personalizzato");
+                                ui.radio_value(&mut self.draft.sel, PageSel::All, t("Tutto", "All"));
+                                ui.radio_value(&mut self.draft.sel, PageSel::Current, t("Corrente", "Current"));
+                                ui.radio_value(&mut self.draft.sel, PageSel::Custom, t("Personalizzato", "Custom"));
                             });
                             if self.draft.sel == PageSel::Custom {
                                 ui.text_edit_singleline(&mut self.draft.custom);
-                                ui.label(RichText::new("Esempi: 1-3, 5  ·  1,1 (pagina 1 due volte)  ·  2x3 (pagina 2 tre volte)").weak().small());
+                                ui.label(RichText::new(t("Esempi: 1-3, 5  ·  1,1 (pagina 1 due volte)  ·  2x3 (pagina 2 tre volte)", "Examples: 1-3, 5  ·  1,1 (page 1 twice)  ·  2x3 (page 2 three times)")).weak().small());
                             }
                         });
                         ui.group(|ui| {
-                            ui.label(RichText::new("Pagine per foglio e scala").strong().color(ACCENT));
-                            if ui.checkbox(&mut self.draft.poster, "Stampa poster (una pagina su piu' fogli)").changed() && self.draft.poster {
+                            ui.label(RichText::new(t("Pagine per foglio e scala", "Pages per sheet and scale")).strong().color(ACCENT));
+                            if ui.checkbox(&mut self.draft.poster, t("Stampa poster (una pagina su piu' fogli)", "Poster printing (one page on several sheets)")).changed() && self.draft.poster {
                                 self.draft.nup = 1; // il poster divide sempre una sola pagina
                             }
                             if self.draft.poster {
                                 ui.horizontal(|ui| {
-                                    ui.label("Griglia di fogli");
+                                    ui.label(t("Griglia di fogli", "Sheet grid"));
                                     let mut g = (self.draft.poster_cols, self.draft.poster_rows);
                                     egui::ComboBox::from_id_salt("po").width(90.0).selected_text(format!("{} x {}", g.0, g.1)).show_ui(ui, |ui| {
                                         for (c, r) in [(1u32, 2u32), (2, 1), (2, 2), (3, 2), (2, 3), (3, 3), (4, 4)] {
@@ -1433,63 +1461,63 @@ impl App {
                                         }
                                     });
                                     if g != (self.draft.poster_cols, self.draft.poster_rows) { self.draft.poster_cols = g.0; self.draft.poster_rows = g.1; }
-                                    ui.label(RichText::new(format!("= {} fogli per pagina", g.0 * g.1)).weak());
+                                    ui.label(RichText::new(if lang::english() { format!("= {} sheets per page", g.0 * g.1) } else { format!("= {} fogli per pagina", g.0 * g.1) }).weak());
                                 });
                                 ui.horizontal(|ui| {
-                                    ui.label("Sovrapposizione");
+                                    ui.label(t("Sovrapposizione", "Overlap"));
                                     ui.add(egui::DragValue::new(&mut self.draft.poster_ov).range(0.0..=30.0).speed(0.5).suffix(" mm"))
-                                        .on_hover_text("Margine ripetuto sui lati interni dei fogli, per unirli senza tagliare il disegno");
+                                        .on_hover_text(t("Margine ripetuto sui lati interni dei fogli, per unirli senza tagliare il disegno", "Margin repeated on the inner edges of the sheets, so they can be joined without cutting the drawing"));
                                 });
-                                ui.label(RichText::new("La pagina viene ingrandita sull'intero poster: ogni foglio ne stampa una parte, da unire. Con sovrapposizione maggiore di zero il foglio riporta i segni di taglio e la scritta R<riga>C<colonna>.").weak().small());
+                                ui.label(RichText::new(t("La pagina viene ingrandita sull'intero poster: ogni foglio ne stampa una parte, da unire. Con sovrapposizione maggiore di zero il foglio riporta i segni di taglio e la scritta R<riga>C<colonna>.", "The page is enlarged over the whole poster: each sheet prints a part of it, to be joined. With an overlap greater than zero the sheet also shows cut marks and the label R<row>C<column>.")).weak().small());
                             }
                             ui.add_enabled_ui(!self.draft.poster, |ui| {
                                 ui.horizontal(|ui| {
-                                    ui.label("Pagine per foglio");
-                                    egui::ComboBox::from_id_salt("nu").width(90.0).selected_text(format!("{} su 1", self.draft.nup)).show_ui(ui, |ui| {
-                                        for k in NUPS { ui.selectable_value(&mut self.draft.nup, k, format!("{k} su 1")); }
+                                    ui.label(t("Pagine per foglio", "Pages per sheet"));
+                                    egui::ComboBox::from_id_salt("nu").width(90.0).selected_text(if lang::english() { format!("{} per sheet", self.draft.nup) } else { format!("{} su 1", self.draft.nup) }).show_ui(ui, |ui| {
+                                        for k in NUPS { ui.selectable_value(&mut self.draft.nup, k, if lang::english() { format!("{k} per sheet") } else { format!("{k} su 1") }); }
                                     });
                                 });
-                                ui.add_enabled_ui(self.draft.nup > 1, |ui| ui.checkbox(&mut self.draft.border, "Bordo attorno alle pagine"));
+                                ui.add_enabled_ui(self.draft.nup > 1, |ui| ui.checkbox(&mut self.draft.border, t("Bordo attorno alle pagine", "Border around pages")));
                                 ui.add_enabled_ui(self.draft.nup == 1, |ui| {
-                                    ui.radio_value(&mut self.draft.scale, ScaleMode::Fit, "Adatta alla pagina");
-                                    ui.radio_value(&mut self.draft.scale, ScaleMode::Actual, "Dimensioni reali (100%)");
+                                    ui.radio_value(&mut self.draft.scale, ScaleMode::Fit, t("Adatta alla pagina", "Fit to page"));
+                                    ui.radio_value(&mut self.draft.scale, ScaleMode::Actual, t("Dimensioni reali (100%)", "Actual size (100%)"));
                                     ui.horizontal(|ui| {
-                                        ui.radio_value(&mut self.draft.scale, ScaleMode::Custom, "Proporzione personalizzata");
+                                        ui.radio_value(&mut self.draft.scale, ScaleMode::Custom, t("Proporzione personalizzata", "Custom scale"));
                                         ui.add_enabled(self.draft.scale == ScaleMode::Custom, egui::DragValue::new(&mut self.draft.pct).range(25..=200).suffix(" %"));
                                     });
                                 });
                             });
-                            ui.checkbox(&mut self.draft.rotate, "Ruota automaticamente");
-                            ui.checkbox(&mut self.draft.center, "Centra automaticamente");
+                            ui.checkbox(&mut self.draft.rotate, t("Ruota automaticamente", "Rotate automatically"));
+                            ui.checkbox(&mut self.draft.center, t("Centra automaticamente", "Center automatically"));
                         });
                         ui.group(|ui| {
-                            ui.label(RichText::new("Colore e luminosità").strong().color(ACCENT));
+                            ui.label(RichText::new(t("Colore e luminosità", "Color and brightness")).strong().color(ACCENT));
                             ui.horizontal(|ui| {
-                                                            ui.radio_value(&mut self.draft.color, ColorMode::Color, "Colori");
-                            ui.radio_value(&mut self.draft.color, ColorMode::Auto, "Automatico");
-                            ui.radio_value(&mut self.draft.color, ColorMode::Gray, "Bianco e nero");
+                            ui.radio_value(&mut self.draft.color, ColorMode::Color, t("Colori", "Color"));
+                            ui.radio_value(&mut self.draft.color, ColorMode::Auto, t("Automatico", "Auto"));
+                            ui.radio_value(&mut self.draft.color, ColorMode::Gray, t("Bianco e nero", "Black and white"));
                             });
-                            ui.label(RichText::new("Automatico: decide la stampante. Bianco e nero: il foglio viene convertito in scala di grigi.").weak().small());
+                            ui.label(RichText::new(t("Automatico: decide la stampante. Bianco e nero: il foglio viene convertito in scala di grigi.", "Auto: the printer decides. Black and white: the sheet is converted to grayscale.")).weak().small());
                             ui.horizontal(|ui| {
-                                ui.label("Scuro");
+                                ui.label(t("Scuro", "Darker"));
                                 ui.add(egui::Slider::new(&mut self.draft.bright, -100..=100).show_value(false));
-                                ui.label("Chiaro");
-                                if ui.add(Button::new("0").min_size(Vec2::new(36.0, 30.0))).on_hover_text("Azzera chiaro/scuro").clicked() { self.draft.bright = 0; }
+                                ui.label(t("Chiaro", "Lighter"));
+                                if ui.add(Button::new("0").min_size(Vec2::new(36.0, 30.0))).on_hover_text(t("Azzera chiaro/scuro", "Reset brightness")).clicked() { self.draft.bright = 0; }
                             });
                             ui.horizontal(|ui| {
-                                ui.label("Contrasto");
+                                ui.label(t("Contrasto", "Contrast"));
                                 ui.add(egui::Slider::new(&mut self.draft.contrast, -100..=100).show_value(false));
-                                if ui.add(Button::new("0").min_size(Vec2::new(36.0, 30.0))).on_hover_text("Azzera il contrasto").clicked() { self.draft.contrast = 0; }
-                                ui.label(RichText::new("Basso ─ Alto").weak().small());
+                                if ui.add(Button::new("0").min_size(Vec2::new(36.0, 30.0))).on_hover_text(t("Azzera il contrasto", "Reset contrast")).clicked() { self.draft.contrast = 0; }
+                                ui.label(RichText::new(t("Basso ─ Alto", "Low ─ High")).weak().small());
                             });
                         });
-                        ui.label(RichText::new("Le impostazioni vengono ricordate per «Stampa subito».").weak());
+                        ui.label(RichText::new(t("Le impostazioni vengono ricordate per «Stampa subito».", "These settings are remembered for \"Print now\".")).weak());
                     });
                 });
                 ui.vertical(|ui| {
                     let (pw, ph) = self.paper;
                     let mm = |p: f32| (p / 72.0 * 25.4).round() as i32;
-                    ui.label(format!("Carta: {} × {} mm", mm(pw), mm(ph)));
+                    ui.label(if lang::english() { format!("Paper: {} × {} mm", mm(pw), mm(ph)) } else { format!("Carta: {} × {} mm", mm(pw), mm(ph)) });
                     let k = (300.0 / pw).min(424.0 / ph);
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(pw * k, ph * k), egui::Sense::hover());
                     ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
@@ -1503,16 +1531,21 @@ impl App {
                     if self.draft.poster {
                         let (cols, rows) = self.draft.poster_grid();
                         let tile = prev % per;
-                        ui.label(format!("Foglio {} di {} · poster {} x {} (riga {}, colonna {})", prev + 1, sheets.max(1), cols, rows, tile / cols + 1, tile % cols + 1));
+                        ui.label(if lang::english() {
+                            format!("Sheet {} of {} · poster {} x {} (row {}, column {})", prev + 1, sheets.max(1), cols, rows, tile / cols + 1, tile % cols + 1)
+                        } else {
+                            format!("Foglio {} di {} · poster {} x {} (riga {}, colonna {})", prev + 1, sheets.max(1), cols, rows, tile / cols + 1, tile % cols + 1)
+                        });
                     } else {
-                        ui.label(format!("Foglio {} di {} · {} pag. per foglio", prev + 1, sheets.max(1), nup));
+                        ui.label(if lang::english() { format!("Sheet {} of {} · {} pages per sheet", prev + 1, sheets.max(1), nup) } else { format!("Foglio {} di {} · {} pag. per foglio", prev + 1, sheets.max(1), nup) });
                     }
                 });
             });
             ui.separator();
             ui.horizontal(|ui| {
-                if ui.add(Button::new(RichText::new(if self.pa_mode { "STAMPA TUTTO" } else { "Stampa" }).size(16.0).strong().color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(if self.pa_mode { 176.0 } else { 136.0 }, 38.0))).clicked() { go = true; }
-                if ui.add(Button::new(RichText::new("Annulla").size(16.0)).min_size(Vec2::new(110.0, 38.0))).clicked() { cancel = true; }
+                let avvio = if self.pa_mode { t("STAMPA TUTTO", "PRINT ALL") } else { t("Stampa", "Print") };
+                if ui.add(Button::new(RichText::new(avvio).size(16.0).strong().color(Color32::WHITE)).fill(ACCENT).min_size(Vec2::new(if self.pa_mode { 176.0 } else { 136.0 }, 38.0))).clicked() { go = true; }
+                if ui.add(Button::new(RichText::new(t("Annulla", "Cancel")).size(16.0)).min_size(Vec2::new(110.0, 38.0))).clicked() { cancel = true; }
             });
         });
         #[cfg(windows)]
@@ -1528,10 +1561,14 @@ impl App {
         if drv_reset { self.draft.drv_mode.clear(); self.drv_seen.clear(); }
         if go {
             let c = self.draft.copies;
-            let testo = if self.pa_mode { format!("Sicuro di voler stampare {c} copie dei file aperti?") } else { format!("Sicuro di voler stampare {c} copie del file?
+            let testo = if lang::english() {
+                if self.pa_mode { format!("Are you sure you want to print {c} copies of the open files?") } else { format!("Are you sure you want to print {c} copies of this file?
+
+{}", self.docs[di].name) }
+            } else if self.pa_mode { format!("Sicuro di voler stampare {c} copie dei file aperti?") } else { format!("Sicuro di voler stampare {c} copie del file?
 
 {}", self.docs[di].name) };
-            if c > 1 && self.st.ask_copies && !confirm("Stampa", &testo) {
+            if c > 1 && self.st.ask_copies && !confirm(t("Stampa", "Print"), &testo) {
                 // risposta "No": resta aperta la finestra di stampa
             } else {
                 self.st = self.draft.clone(); self.st.save(); self.show_print = false;
@@ -1667,7 +1704,7 @@ fn resize_grips(ctx: &egui::Context) {
 #[cfg(not(windows))]
 fn cups_options(ui: &mut egui::Ui, printer: &str, drv_printer: &mut String, drv_mode: &mut String) {
     if printer.is_empty() {
-        ui.label(RichText::new("Scegli prima una stampante").weak());
+        ui.label(RichText::new(t("Scegli prima una stampante", "Choose a printer first")).weak());
         return;
     }
     if printer != drv_printer.as_str() { // stampante cambiata: si riparte dalle sue impostazioni
@@ -1677,7 +1714,7 @@ fn cups_options(ui: &mut egui::Ui, printer: &str, drv_printer: &mut String, drv_
     }
     let opts = spool::options(printer);
     if opts.is_empty() {
-        ui.label(RichText::new("La coda CUPS non riporta opzioni (driver senza PPD?)").weak());
+        ui.label(RichText::new(t("La coda CUPS non riporta opzioni (driver senza PPD?)", "The CUPS queue reports no options (driver without a PPD?)")).weak());
         return;
     }
     let raw = from_hex(drv_mode);
@@ -1821,18 +1858,18 @@ impl eframe::App for App {
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if !macos { // su macOS ci sono i pulsanti nativi della barra del titolo
-                            if icon_btn(ui, Ic::Close, "Chiudi", true) { quit = true; }
-                            if icon_btn(ui, Ic::Max, if maxed { "Ripristina" } else { "Massimizza" }, true) { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maxed)); }
-                            if icon_btn(ui, Ic::Min, "Riduci a icona", true) { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); }
+                            if icon_btn(ui, Ic::Close, t("Chiudi", "Close"), true) { quit = true; }
+                            if icon_btn(ui, Ic::Max, if maxed { t("Ripristina", "Restore") } else { t("Massimizza", "Maximize") }, true) { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maxed)); }
+                            if icon_btn(ui, Ic::Min, t("Riduci a icona", "Minimize"), true) { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); }
                             ui.separator();
                         }
-                        all |= icon_btn(ui, Ic::All, "STAMPA TUTTO / A GRUPPO: scegli le pagine di ogni scheda e stampa tutto insieme", has_docs);
-                        q |= icon_btn(ui, Ic::Quick, "Stampa subito: scheda corrente, ultime impostazioni (Ctrl+Maiusc+P)", cur_doc.is_some());
-                        pd |= icon_btn(ui, Ic::Preview, "Stampa… con anteprima (Ctrl+P)", cur_doc.is_some());
+                        all |= icon_btn(ui, Ic::All, t("STAMPA TUTTO / A GRUPPO: scegli le pagine di ogni scheda e stampa tutto insieme", "PRINT ALL / GROUP: choose the pages of every tab and print them together"), has_docs);
+                        q |= icon_btn(ui, Ic::Quick, t("Stampa subito: scheda corrente, ultime impostazioni (Ctrl+Maiusc+P)", "Print now: current tab, last settings (Ctrl+Shift+P)"), cur_doc.is_some());
+                        pd |= icon_btn(ui, Ic::Preview, t("Stampa… con anteprima (Ctrl+P)", "Print… with preview (Ctrl+P)"), cur_doc.is_some());
                         ui.separator();
-                        if icon_btn_a(ui, Ic::Pan, "Sposta la pagina con il mouse (H)", cur_doc.is_some(), self.pan) { self.pan = true; }
-                        if icon_btn_a(ui, Ic::Sel, "Seleziona testo (T)", cur_doc.is_some(), !self.pan) { self.pan = false; }
-                        if icon_btn_a(ui, Ic::Thumbs, "Mini anteprime delle pagine a sinistra", cur_doc.is_some(), self.st.thumbs) { self.st.thumbs = !self.st.thumbs; }
+                        if icon_btn_a(ui, Ic::Pan, t("Sposta la pagina con il mouse (H)", "Move the page with the mouse (H)"), cur_doc.is_some(), self.pan) { self.pan = true; }
+                        if icon_btn_a(ui, Ic::Sel, t("Seleziona testo (T)", "Select text (T)"), cur_doc.is_some(), !self.pan) { self.pan = false; }
+                        if icon_btn_a(ui, Ic::Thumbs, t("Mini anteprime delle pagine a sinistra", "Page thumbnails on the left"), cur_doc.is_some(), self.st.thumbs) { self.st.thumbs = !self.st.thumbs; }
                         let (_, drag) = ui.allocate_exact_size(Vec2::new(56.0, 28.0), egui::Sense::click_and_drag());
                         if drag.drag_started() { ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag); }
                         if drag.double_clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maxed)); }
@@ -1840,39 +1877,39 @@ impl eframe::App for App {
                             ui.image(egui::load::SizedTexture::new(self.logo.id(), Vec2::splat(24.0)));
                             ui.menu_button(RichText::new("File").strong().color(ACCENT), |ui| {
                                 ui.set_min_width(260.0);
-                                if mi(ui, "Apri…", "Ctrl+O", true) { o = true; }
-                                if mi(ui, "Chiudi scheda", "Ctrl+W", cur_doc.is_some()) { ctrl_w = true; }
-                                if mi(ui, "Chiudi tutte le schede", "", has_docs) { close_all = true; }
+                                if mi(ui, t("Apri…", "Open…"), "Ctrl+O", true) { o = true; }
+                                if mi(ui, t("Chiudi scheda", "Close tab"), "Ctrl+W", cur_doc.is_some()) { ctrl_w = true; }
+                                if mi(ui, t("Chiudi tutte le schede", "Close all tabs"), "", has_docs) { close_all = true; }
                                 ui.separator();
-                                if mi(ui, "Copia testo selezionato", "Ctrl+C", cur_doc.is_some()) { copy_req = true; }
-                                if mi(ui, "Seleziona tutto il testo", "Ctrl+A", cur_doc.is_some()) { sel_all = true; }
+                                if mi(ui, t("Copia testo selezionato", "Copy selected text"), "Ctrl+C", cur_doc.is_some()) { copy_req = true; }
+                                if mi(ui, t("Seleziona tutto il testo", "Select all text"), "Ctrl+A", cur_doc.is_some()) { sel_all = true; }
                                 ui.separator();
-                                if mi(ui, "Stampa…", "Ctrl+P", cur_doc.is_some()) { pd = true; }
-                                if mi(ui, "Stampa subito", "Ctrl+Maiusc+P", cur_doc.is_some()) { q = true; }
-                                if mi(ui, "STAMPA TUTTO / A GRUPPO…", "", has_docs) { all = true; }
-                                ui.menu_button("Stampante", |ui| {
+                                if mi(ui, t("Stampa…", "Print…"), "Ctrl+P", cur_doc.is_some()) { pd = true; }
+                                if mi(ui, t("Stampa subito", "Print now"), if lang::english() { "Ctrl+Shift+P" } else { "Ctrl+Maiusc+P" }, cur_doc.is_some()) { q = true; }
+                                if mi(ui, t("STAMPA TUTTO / A GRUPPO…", "PRINT ALL / GROUP…"), "", has_docs) { all = true; }
+                                ui.menu_button(t("Stampante", "Printer"), |ui| {
                                     for p in &self.printers {
                                         if ui.selectable_label(self.st.printer == *p, p.as_str()).clicked() { self.st.printer = p.clone(); ui.close_menu(); }
                                     }
                                 });
-                                ui.menu_button("Pagine per foglio", |ui| {
+                                ui.menu_button(t("Pagine per foglio", "Pages per sheet"), |ui| {
                                     for k in NUPS {
-                                        if ui.selectable_label(self.st.nup == k, format!("{k} su 1")).clicked() { self.st.nup = k; ui.close_menu(); }
+                                        if ui.selectable_label(self.st.nup == k, if lang::english() { format!("{k} per sheet") } else { format!("{k} su 1") }).clicked() { self.st.nup = k; ui.close_menu(); }
                                     }
                                 });
                                 ui.separator();
-                                if mi(ui, "Schermo intero", "F11", true) { fs_toggle = true; }
-                                ui.checkbox(&mut self.st.thumbs, "Mini anteprime delle pagine")
-                                    .on_hover_text("Mostra a sinistra le miniature di tutte le pagine: un clic porta a quella pagina");
+                                if mi(ui, t("Schermo intero", "Full screen"), "F11", true) { fs_toggle = true; }
+                                ui.checkbox(&mut self.st.thumbs, t("Mini anteprime delle pagine", "Page thumbnails"))
+                                    .on_hover_text(t("Mostra a sinistra le miniature di tutte le pagine: un clic porta a quella pagina", "Show thumbnails of every page on the left: one click goes to that page"));
                                 #[cfg(target_os = "macos")]
-                                ui.checkbox(&mut self.st.tabs_pin, "Fissa la barra delle schede")
-                                    .on_hover_text("Se non e' fissata, questa barra compare solo portando il mouse in cima alla finestra");
-                                ui.checkbox(&mut self.st.background, "Apri sempre in secondo piano")
-                                    .on_hover_text("Aprendo altri PDF la finestra del programma non passa davanti: non perdi il focus su quello che stai usando");
+                                ui.checkbox(&mut self.st.tabs_pin, t("Fissa la barra delle schede", "Pin the tab bar"))
+                                    .on_hover_text(t("Se non e' fissata, questa barra compare solo portando il mouse in cima alla finestra", "Unless pinned, this bar only appears when the mouse reaches the top of the window"));
+                                ui.checkbox(&mut self.st.background, t("Apri sempre in secondo piano", "Always open in the background"))
+                                    .on_hover_text(t("Aprendo altri PDF la finestra del programma non passa davanti: non perdi il focus su quello che stai usando", "Opening other PDFs does not bring the program window to the front, so you keep the focus on what you are using"));
                                 ui.separator();
-                                if mi(ui, "Impostazioni…", "Ctrl+,", true) { self.show_cfg = true; self.cfg = self.st.clone(); }
-                                if mi(ui, "Info", "", true) { show_info = true; }
-                                if mi(ui, "Esci", "", true) { quit = true; }
+                                if mi(ui, t("Impostazioni…", "Settings…"), "Ctrl+,", true) { self.show_cfg = true; self.cfg = self.st.clone(); }
+                                if mi(ui, t("Info", "About"), "", true) { show_info = true; }
+                                if mi(ui, t("Esci", "Quit"), "", true) { quit = true; }
                             });
                             { // barra di scorrimento sotto le schede: compare solo quando servono, occupa 6 px e non le copre
                                 let mut sc = egui::style::ScrollStyle::solid();
@@ -1921,7 +1958,7 @@ impl eframe::App for App {
             egui::Area::new(egui::Id::new("bar_hint")).fixed_pos(egui::pos2(r.center().x - 20.0, r.top() + 3.0)).show(ctx, |ui| {
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(40.0, 4.0), egui::Sense::hover());
                 ui.painter().rect_filled(rect, 2.0, Color32::from_gray(150));
-                resp.on_hover_text("Porta il mouse qui per la barra con File, stampa e schede");
+                resp.on_hover_text(t("Porta il mouse qui per la barra con File, stampa e schede", "Move the mouse here for the bar with File, printing and tabs"));
             });
         }
         if quit { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
@@ -1966,7 +2003,7 @@ impl eframe::App for App {
                         .frame(egui::Frame::none().fill(Color32::from_rgb(236, 237, 240)).inner_margin(egui::Margin::symmetric(6.0, 6.0)))
                         .show(ctx, |ui| {
                             let n = self.docs[i].sizes.len();
-                            ui.label(RichText::new(format!("Pagine · {n}")).strong().size(13.0));
+                            ui.label(RichText::new(if lang::english() { format!("Pages · {n}") } else { format!("Pagine · {n}") }).strong().size(13.0));
                             ui.add_space(4.0);
                             egui::ScrollArea::vertical().id_salt("mini_scroll").auto_shrink([false, false]).show_rows(ui, 166.0, n, |ui, range| {
                                 for p in range {
@@ -1985,7 +2022,7 @@ impl eframe::App for App {
                                             format!("{}", p + 1), egui::FontId::proportional(11.0), if p == cur { ACCENT } else { Color32::from_gray(90) });
                                     }
                                     if resp.clicked() { go = Some(p); }
-                                    resp.on_hover_text(format!("Vai a pagina {}", p + 1));
+                                    resp.on_hover_text(if lang::english() { format!("Go to page {}", p + 1) } else { format!("Vai a pagina {}", p + 1) });
                                 }
                             });
                         });
@@ -2007,8 +2044,8 @@ impl eframe::App for App {
                         ui.add_space(80.0);
                         ui.image(egui::load::SizedTexture::new(self.logo.id(), Vec2::splat(96.0)));
                         ui.heading("PDF Reader CP");
-                        ui.label("Trascina qui un PDF oppure premi Apri.");
-                        if ui.button("Apri PDF…").clicked() { o = true; }
+                        ui.label(t("Trascina qui un PDF oppure premi Apri.", "Drag a PDF here or press Open."));
+                        if ui.button(t("Apri PDF…", "Open PDF…")).clicked() { o = true; }
                     });
                 });
             }
@@ -2074,8 +2111,8 @@ impl eframe::App for App {
                             for c in chars.iter().skip(lo).take(hi + 1 - lo) { if c.r[2] - c.r[0] >= 0.01 { ui.painter().rect_filled(rect_of(c), 0.0, Color32::from_rgba_unmultiplied(51, 144, 255, 90)); } }
                         }
                         resp.context_menu(|ui| {
-                            if ui.button("Copia").clicked() { copy_req = true; ui.close_menu(); }
-                            if ui.button("Seleziona tutto").clicked() {
+                            if ui.button(lang::t("Copia", "Copy")).clicked() { copy_req = true; ui.close_menu(); }
+                            if ui.button(lang::t("Seleziona tutto", "Select all")).clicked() {
                                 let mut it = chars.iter().enumerate().filter(|(_, c)| c.r[2] - c.r[0] > 0.01 && c.r[3] - c.r[1] > 0.01).map(|(k, _)| k);
                                 if let Some(a) = it.next() { let b = it.last().unwrap_or(a); *sel = Some(Sel { doc: i, page: cur, a, b }); }
                                 ui.close_menu();
@@ -2104,11 +2141,11 @@ impl eframe::App for App {
             }
         });
 
-        if no_text { self.toast("Questa pagina non contiene testo selezionabile (immagine scansionata?)".into()); }
+        if no_text { self.toast(t("Questa pagina non contiene testo selezionabile (immagine scansionata?)", "This page contains no selectable text (scanned image?)").into()); }
         if copy_req {
             match self.selected_text() {
-                Some(t) => { ctx.copy_text(t); self.toast("Testo copiato negli appunti".into()); }
-                None => self.toast("Seleziona prima del testo: trascina il mouse sulla pagina".into()),
+                Some(t) => { ctx.copy_text(t); self.toast(lang::t("Testo copiato negli appunti", "Text copied to the clipboard").into()); }
+                None => self.toast(lang::t("Seleziona prima del testo: trascina il mouse sulla pagina", "Select some text first: drag the mouse over the page").into()),
             }
         }
 
@@ -2125,22 +2162,22 @@ impl eframe::App for App {
                             if ui.button("-").clicked() { d.zoom = (d.zoom - 0.1).max(0.3); }
                             ui.label(format!("{:.0}%", d.zoom * 100.0));
                             if ui.button("+").clicked() { d.zoom = (d.zoom + 0.1).min(4.0); }
-                            if ui.button(if d.fitpage { "Pagina" } else { "Larghezza" }).on_hover_text("Adatta a larghezza / pagina intera").clicked() { d.fitpage = !d.fitpage; d.zoom = 1.0; }
+                            if ui.button(if d.fitpage { t("Pagina", "Page") } else { t("Larghezza", "Width") }).on_hover_text(t("Adatta a larghezza / pagina intera", "Fit to width / whole page")).clicked() { d.fitpage = !d.fitpage; d.zoom = 1.0; }
                             ui.separator();
-                            let r = ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Cerca nel PDF…").desired_width(170.0));
+                            let r = ui.add(egui::TextEdit::singleline(&mut self.search).hint_text(t("Cerca nel PDF…", "Search in the PDF…")).desired_width(170.0));
                             if self.search_focus { r.request_focus(); self.search_focus = false; }
                             if r.changed() { self.search_hit = None; }
                             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                 if ui.input(|i| i.modifiers.shift) { search_prev = true; } else { search_next = true; }
                                 r.request_focus();
                             }
-                            if ui.button("Prec.").clicked() { search_prev = true; }
-                            if ui.button("Succ.").clicked() { search_next = true; }
+                            if ui.button(t("Prec.", "Prev")).clicked() { search_prev = true; }
+                            if ui.button(t("Succ.", "Next")).clicked() { search_next = true; }
                             if !self.search.is_empty() {
                                 let q: Vec<char> = self.search.chars().map(|c| c.to_lowercase().next().unwrap_or(c)).collect();
                                 match d.ptext.get(&d.cur).map(|t| find_all(t, &q).len()) {
-                                    Some(0) => { ui.label("nessun risultato in pagina"); }
-                                    Some(k) => { ui.label(format!("{k} in pagina")); }
+                                    Some(0) => { ui.label(t("nessun risultato in pagina", "no match on this page")); }
+                                    Some(k) => { ui.label(if lang::english() { format!("{k} on this page") } else { format!("{k} in pagina") }); }
                                     None => {}
                                 }
                             }
@@ -2171,13 +2208,17 @@ impl eframe::App for App {
         // ---- stampa in corso: cerchio di caricamento finche' il lavoro non e' in coda nella stampante ----
         let mut cancel_print = false;
         if let Some(t) = &self.task {
-            let testo = format!("Invio alla stampante…  {}/{} fogli · scheda {}/{}", t.done.min(t.total), t.total, (t.di + 1).min(t.ids.len()), t.ids.len());
+            let testo = if lang::english() {
+                format!("Sending to the printer…  {}/{} sheets · tab {}/{}", t.done.min(t.total), t.total, (t.di + 1).min(t.ids.len()), t.ids.len())
+            } else {
+                format!("Invio alla stampante…  {}/{} fogli · scheda {}/{}", t.done.min(t.total), t.total, (t.di + 1).min(t.ids.len()), t.ids.len())
+            };
             egui::Area::new(egui::Id::new("printing")).order(egui::Order::Foreground).anchor(egui::Align2::RIGHT_BOTTOM, [-16.0, -16.0]).show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.add(egui::Spinner::new().size(20.0));
                         ui.label(RichText::new(testo).strong());
-                        if ui.small_button("Annulla").clicked() { cancel_print = true; }
+                        if ui.small_button(lang::t("Annulla", "Cancel")).clicked() { cancel_print = true; }
                     });
                 });
             });
@@ -2187,13 +2228,17 @@ impl eframe::App for App {
         // ---- stampa a gruppo: stesso cerchio di caricamento, un solo lavoro ----
         let mut cancel_group = false;
         if let Some(g) = &self.gjob {
-            let testo = format!("Gruppo alla stampante…  {}/{} fogli · {} pagine", g.done.min(g.total), g.total, g.sheets.len() * g.st.nup.max(1) as usize);
+            let testo = if lang::english() {
+                format!("Group to the printer…  {}/{} sheets · {} pages", g.done.min(g.total), g.total, g.sheets.len() * g.st.nup.max(1) as usize)
+            } else {
+                format!("Gruppo alla stampante…  {}/{} fogli · {} pagine", g.done.min(g.total), g.total, g.sheets.len() * g.st.nup.max(1) as usize)
+            };
             egui::Area::new(egui::Id::new("printing_group")).order(egui::Order::Foreground).anchor(egui::Align2::RIGHT_BOTTOM, [-16.0, -56.0]).show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.add(egui::Spinner::new().size(20.0));
                         ui.label(RichText::new(testo).strong());
-                        if ui.small_button("Annulla").clicked() { cancel_group = true; }
+                        if ui.small_button(t("Annulla", "Cancel")).clicked() { cancel_group = true; }
                     });
                 });
             });
@@ -2207,20 +2252,20 @@ impl eframe::App for App {
         if self.pwd.is_some() { self.pwd_window(ctx); }
         if self.show_info {
             let mut open = true;
-            egui::Window::new("Informazioni").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            egui::Window::new(t("Informazioni", "About")).open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.image(egui::load::SizedTexture::new(self.logo.id(), Vec2::splat(72.0)));
                     ui.heading("PDF Reader CP");
-                    ui.label("Programma opensource progettato da Peppe CP con l'aiuto della IA.");
-                    ui.label(RichText::new(format!("Versione {}", app_version())).weak());
+                    ui.label(t("Programma opensource progettato da Peppe CP con l'aiuto della IA.", "Open source program designed by Peppe CP with the help of AI."));
+                    ui.label(RichText::new(if lang::english() { format!("Version {}", app_version()) } else { format!("Versione {}", app_version()) }).weak());
                     ui.add_space(8.0);
                     ui.separator();
                     ui.scope(|ui| {
                         ui.set_max_width(430.0);
-                        ui.label("Se vuoi contribuire al mio lavoro ti lascio in basso il pulsante per contribuire anche con una piccola donazione simbolica visto il tempo che ti farò risparmiare per stampare grossi quantitativi di pdf ;-)");
+                        ui.label(t("Se vuoi contribuire al mio lavoro ti lascio in basso il pulsante per contribuire anche con una piccola donazione simbolica visto il tempo che ti farò risparmiare per stampare grossi quantitativi di pdf ;-)", "If you want to support my work, the button below is for a small symbolic donation, given the time it saves you when printing large amounts of PDFs ;-)"));
                     });
                     ui.add_space(6.0);
-                    if ui.add(Button::new(RichText::new("Dona con PayPal").strong().color(Color32::WHITE)).fill(Color32::from_rgb(0, 112, 186)).min_size(Vec2::new(220.0, 38.0)))
+                    if ui.add(Button::new(RichText::new(t("Dona con PayPal", "Donate with PayPal")).strong().color(Color32::WHITE)).fill(Color32::from_rgb(0, 112, 186)).min_size(Vec2::new(220.0, 38.0)))
                         .on_hover_text(DONATE_URL).clicked() {
                         ctx.output_mut(|o| o.open_url = Some(egui::OpenUrl::new_tab(DONATE_URL)));
                     }
@@ -2229,13 +2274,13 @@ impl eframe::App for App {
                     ui.add_space(8.0);
                     ui.separator();
                     ui.add_space(4.0);
-                    if ui.add_enabled(self.upd.is_none(), Button::new("Cerca la versione piu' recente"))
-                        .on_hover_text("Controlla su GitHub se e' stata pubblicata una versione nuova").clicked() {
+                    if ui.add_enabled(self.upd.is_none(), Button::new(t("Cerca la versione piu' recente", "Check for the latest version")))
+                        .on_hover_text(t("Controlla su GitHub se e' stata pubblicata una versione nuova", "Check on GitHub whether a new version has been published")).clicked() {
                         self.check_update(ctx);
                     }
                     if self.upd.is_some() { ui.spinner(); }
                     if !self.upd_msg.is_empty() { ui.label(RichText::new(&self.upd_msg).weak()); }
-                    if !self.upd_url.is_empty() { ui.hyperlink_to("Apri la pagina delle release", self.upd_url.clone()); }
+                    if !self.upd_url.is_empty() { ui.hyperlink_to(t("Apri la pagina delle release", "Open the releases page"), self.upd_url.clone()); }
                 });
             });
             if !open { self.show_info = false; }

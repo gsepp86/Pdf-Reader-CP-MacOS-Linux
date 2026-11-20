@@ -9,6 +9,7 @@
 // vassoio, qualita'...) lette da `lpoptions`: si scelgono nella finestra, senza comandi
 // da terminale. Le scelte valgono per il singolo lavoro (`lp -o chiave=valore`) e sono
 // ricordate per stampante, come le impostazioni del driver su Windows.
+use crate::lang::{english, t};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -226,23 +227,25 @@ fn write_png(path: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), String> {
 impl Job {
     pub fn new(printer: &str, name: &str, devmode: Option<&[u8]>) -> Result<Job, String> {
         if printer.trim().is_empty() {
-            return Err("Nessuna stampante selezionata".into());
+            return Err(t("Nessuna stampante selezionata", "No printer selected").into());
         }
         // CUPS presente? La stampante esiste ed e' abilitata?
         let dest = dest(printer);
         let st = Command::new("lpstat").args(["-p", dest.as_str()]).output().map_err(|_| {
-            "Comandi di stampa non trovati: installa CUPS (Linux: pacchetto cups-client)".to_string()
+            t("Comandi di stampa non trovati: installa CUPS (Linux: pacchetto cups-client)", "Print commands not found: install CUPS (Linux: cups-client package)").to_string()
         })?;
         if !st.status.success() {
             let e = String::from_utf8_lossy(&st.stderr).trim().to_string();
-            return Err(if e.is_empty() {
+            return Err(if english() {
+                if e.is_empty() { format!("Printer «{printer}» is not available") } else { format!("Printer «{printer}» is not available: {e}") }
+            } else if e.is_empty() {
                 format!("La stampante «{printer}» non e' disponibile")
             } else {
                 format!("La stampante «{printer}» non e' disponibile: {e}")
             });
         }
         let dir = std::env::temp_dir().join(format!("pdfreadercp-{}-{}", std::process::id(), unique()));
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Cartella temporanea non creabile: {e}"))?;
+        std::fs::create_dir_all(&dir).map_err(|e| if english() { format!("Cannot create the temporary folder: {e}") } else { format!("Cartella temporanea non creabile: {e}") })?;
         Ok(Job {
             dest,
             name: name.to_string(),
@@ -284,7 +287,7 @@ impl Job {
                 self.same.borrow_mut().insert(key, path.clone());
                 self.sheets.borrow_mut().push(path);
             }
-            Err(e) => eprintln!("PDF Reader CP: foglio non salvato: {e}"),
+            Err(e) => eprintln!("PDF Reader CP: {}", if english() { format!("sheet not saved: {e}") } else { format!("foglio non salvato: {e}") }),
         }
     }
 }
@@ -305,8 +308,8 @@ impl Drop for Job {
             }
             match cmd.args(&sheets).output() {
                 Ok(o) if o.status.success() => {}
-                Ok(o) => eprintln!("PDF Reader CP: stampa non riuscita: {}", String::from_utf8_lossy(&o.stderr).trim()),
-                Err(e) => eprintln!("PDF Reader CP: comando `lp` non eseguibile: {e}"),
+                Ok(o) => eprintln!("PDF Reader CP: {} {}", t("stampa non riuscita:", "printing failed:"), String::from_utf8_lossy(&o.stderr).trim()),
+                Err(e) => eprintln!("PDF Reader CP: {} {e}", t("comando `lp` non eseguibile:", "`lp` command not executable:")),
             }
         }
         let _ = std::fs::remove_dir_all(&self.dir);
