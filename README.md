@@ -3,6 +3,13 @@ Programma opensource progettato da Peppe CP con l'aiuto della IA.
 
 Lettore PDF a schede in Rust (egui + PDFium): una sola barra in alto con schede e comandi di stampa, documento a tutto schermo.
 
+
+## Se vuoi contribuire al mio lavoro visto il tempo che ti farò risparmiare quando stampi tanti file ti lascio in basso il pulsante per contribuire anche con una piccola donazione simbolica visto che una app così utile gratis per sempre non la trovi ovunque apprezzo il gesto ;-)
+
+[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?logo=paypal)](https://paypal.me/PeppeCP)
+
+In questa nuova build è stato aggiunto il supporto in inglese (attualmente supporta italiano e inglese)
+
 ## Creare l'installer per Windows
 **Metodo 1 - sul tuo PC (Windows 10/11 x64):** installa Rust (https://rustup.rs), poi doppio clic su `build.bat`.
 Scarica da solo pdfium.dll e Inno Setup e produce `dist\PDFReaderCP_Setup_3.3.exe`.
