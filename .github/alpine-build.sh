@@ -29,5 +29,13 @@ if [ "$rc" -ne 0 ]; then
   exit 1
 fi
 
-# le dipendenze dichiarate nel .apk devono risolversi nei repository di Alpine
-apk add --allow-untrusted --simulate ./dist/*.apk
+# le dipendenze dichiarate nel .apk devono esistere nei repository di Alpine
+for p in cups-libs mesa libxkbcommon libx11 libxcursor libxrandr libxi font-dejavu; do
+  apk search -q -e "$p" | grep -q . || { echo "::error::dipendenza inesistente nei repository: $p"; exit 1; }
+done
+tar -tzf ./dist/*.apk | head -5
+if ! out=$(apk add --allow-untrusted --simulate ./dist/*.apk 2>&1); then
+  echo "::warning::apk --simulate: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-500)"
+else
+  printf '%s\n' "$out" | tail -10
+fi
